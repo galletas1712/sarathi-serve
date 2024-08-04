@@ -38,7 +38,7 @@ class ModelConfig:
         },
     )
     dtype: str = field(
-        default="float16",
+        default="auto",
         metadata={
             "help": "Data type for model weights and activations. 'auto' will use FP16 for FP32 and FP16 models, and BF16 for BF16 models."
         },
@@ -164,7 +164,7 @@ class CacheConfig:
 @dataclass
 class ParallelConfig:
     pipeline_parallel_size: int = field(
-        default=2, metadata={"help": "Number of pipeline parallel groups."}
+        default=1, metadata={"help": "Number of pipeline parallel groups."}
     )
     tensor_parallel_size: int = field(
         default=1, metadata={"help": "Number of tensor parallel groups."}
@@ -273,6 +273,19 @@ class SarathiSchedulerConfig(BaseSchedulerConfig):
     @staticmethod
     def get_type():
         return SchedulerType.SARATHI
+
+
+@dataclass
+class RollingPreemptionProfilingSchedulerConfig(BaseSchedulerConfig):
+    max_num_seqs: int = 8
+    chunk_size: int = 512
+
+    def get_max_num_batched_tokens(self, max_model_len: int):
+        return self.max_num_seqs * max_model_len
+
+    @staticmethod
+    def get_type():
+        return SchedulerType.ROLLING_PREEMPTION_PROFILING
 
 
 @dataclass
