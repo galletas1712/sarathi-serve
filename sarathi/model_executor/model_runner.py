@@ -201,6 +201,7 @@ class ModelRunner:
         cache_block_size = CacheEngine.get_cache_block_size(
             block_size, self.config.model_config, self.config.parallel_config
         )
+        print(f"Cache size per token: {cache_block_size / block_size}, Cache block size: {cache_block_size}, Block size: {block_size}")
         num_gpu_blocks = int(
             (total_gpu_memory * gpu_memory_utilization - peak_memory)
             // cache_block_size

@@ -116,11 +116,11 @@ class RollingPreemptionProfilingScheduler(BaseScheduler):
                     seq, prompt_chunk_len=next_num_prefill_tokens
                 )
             )
-            print(f"Prefill request ({seq.seq_id}) scheduled to run, next_num_prefill_tokens = {next_num_prefill_tokens} processed {seq.prompt_tokens_processed} so far")
+            # print(f"Prefill request ({seq.seq_id}) scheduled to run, next_num_prefill_tokens = {next_num_prefill_tokens} processed {seq.prompt_tokens_processed} so far")
             running.append(seq)
 
         while self.waiting:
-            seq = self.waiting[0]
+            seq = self.waiting[-1]
 
             if not self._check_request_prompt_length(seq):
                 ignored_seq_ids.append(seq.seq_id)
@@ -148,7 +148,7 @@ class RollingPreemptionProfilingScheduler(BaseScheduler):
                 preempted_seq_ids.append(seq_to_preempt.seq_id)
                 self._preempt(seq_to_preempt)
 
-            seq = self.waiting.pop(0)
+            seq = self.waiting.pop(-1)
             self._allocate(seq)
             num_batched_tokens += next_num_prefill_tokens
             scheduled_seq_metadata_list.append(
@@ -163,7 +163,7 @@ class RollingPreemptionProfilingScheduler(BaseScheduler):
             preempted_seq_ids.append(seq_to_preempt.seq_id)
             self._preempt(seq_to_preempt)
         
-        print(f"Preempting requests: {preempted_seq_ids}")
+        # print(f"Preempting requests: {preempted_seq_ids}")
 
         # make sure that prefills are at the start of the batch, so that we don't violate assumptions
         # made in the original vllm codebase

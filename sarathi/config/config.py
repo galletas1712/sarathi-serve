@@ -280,8 +280,11 @@ class RollingPreemptionProfilingSchedulerConfig(BaseSchedulerConfig):
     max_num_seqs: int = 8
     chunk_size: int = 512
 
+    max_num_batched_tokens: Optional[int] = None
+
     def get_max_num_batched_tokens(self, max_model_len: int):
-        return self.max_num_seqs * max_model_len
+        if self.max_num_batched_tokens is not None:
+            return self.max_num_batched_tokens
 
     @staticmethod
     def get_type():
