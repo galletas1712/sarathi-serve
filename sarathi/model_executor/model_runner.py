@@ -208,6 +208,8 @@ class ModelRunner:
         peak_memory = torch.cuda.max_memory_allocated()
         total_gpu_memory = get_gpu_memory()
         cache_block_size = self.attention_backend_wrapper.get_cache_block_size()
+        print(f"Cache size per token: {cache_block_size / block_size}, Cache block size: {cache_block_size}, Block size: {block_size}")
+
         num_gpu_blocks = int(
             (total_gpu_memory * gpu_memory_utilization - peak_memory)
             // cache_block_size

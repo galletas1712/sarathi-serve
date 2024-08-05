@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Tuple
 
 from sarathi.config import SystemConfig
+from sarathi.config import RollingPreemptionProfilingSchedulerConfig
 from sarathi.core.datatypes.request_output import RequestOutput
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
 from sarathi.core.datatypes.sequence import (
@@ -18,6 +19,7 @@ from sarathi.utils.threading_utils import synchronized
 class BaseSequenceManager(ABC):
 
     def __init__(self, config: SystemConfig):
+        self.config = config
         self.seq_map: Dict[str, Sequence] = {}
 
     @synchronized
@@ -100,8 +102,9 @@ class BaseSequenceManager(ABC):
         if not seq.prompt_processing_finished:
             return
 
-        seq.append_token_id(sample.output_token)
-        self._on_append_token(seq)
+        if not isinstance(self.config.scheduler_config, RollingPreemptionProfilingSchedulerConfig):
+            seq.append_token_id(sample.output_token)
+            self._on_append_token(seq)
         # this function will update the seq status
         # to finished if the stop condition is met
         seq.check_stop()

@@ -481,6 +481,9 @@ class BaseLLMEngine:
 
     def stop_profiling(self) -> None:
         self._run_workers("stop_profiling")
+    
+    def terminate(self) -> None:
+        self._run_workers("terminate")
 
     def get_metric_store(self) -> MetricsStore:
         return self.metrics_store
