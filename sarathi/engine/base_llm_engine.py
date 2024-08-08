@@ -482,8 +482,13 @@ class BaseLLMEngine:
     def stop_profiling(self) -> None:
         self._run_workers("stop_profiling")
     
+    def _unbind_zmq_sockets(self):
+        self.enqueue_socket.close()
+        self.output_socket.close()
+
     def terminate(self) -> None:
-        self._run_workers("terminate")
+        self._unbind_zmq_sockets()
+        ray.shutdown()
 
     def get_metric_store(self) -> MetricsStore:
         return self.metrics_store

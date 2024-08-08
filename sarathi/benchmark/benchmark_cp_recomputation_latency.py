@@ -9,11 +9,12 @@ from sarathi.engine.llm_engine import BaseLLMEngine
 from sarathi.config.config import BaseEndpointConfig, ReplicaConfig, RollingPreemptionProfilingSchedulerConfig
 from dataclasses import dataclass
 
-TOKEN_SIZE_LOG_MAX = 18  # Determined by number of GPU blocks (~ GPU HBM size)
+CACHE_SIZE_PER_TOKEN = 131072 # Determined by the model
+TOKEN_SIZE_LOG_MAX = 17  # Determined by number of GPU blocks (~ GPU HBM size)
 MAX_MODEL_TOKENS = 8192
-NUM_PASSES = 20
+NUM_PASSES = 4
 
-chunk_size_logs = [6, 7, 8, 9, 10, 11]
+chunk_size_logs = [11, 10, 9, 8, 7, 6]
 
 benchmark_config = BenchmarkConfig.create_from_cli_args()
 replica_config = ReplicaConfig(
@@ -36,6 +37,7 @@ for chunk_size_log in chunk_size_logs:
     chunk_size = int(2 ** chunk_size_log)
 
     token_count_logs = torch.linspace(start=chunk_size_log, end=TOKEN_SIZE_LOG_MAX, steps=TOKEN_SIZE_LOG_MAX-chunk_size_log+1, dtype=int).tolist()
+    token_count_logs = reversed(token_count_logs)
 
     for token_count_log in token_count_logs:
         token_count = 2 ** token_count_log
@@ -93,7 +95,7 @@ for benchmark_dim in benchmark_dims:
         if i % num_chunked_prefill_iters == num_chunked_prefill_iters - 1:
             end = time.perf_counter_ns()
             latencies.append((end - start) / 1e6)
-            # print(f"Recomputation of whole batch took: {latencies[-1]} ms")
+            print(f"Recomputation of whole batch took: {latencies[-1]} ms")
             start = time.perf_counter_ns()
     end_all = time.perf_counter_ns()
     mean_latency_all_div = (end_all - start_all) / (1e6 * NUM_PASSES)
@@ -115,7 +117,8 @@ for benchmark_dim in benchmark_dims:
         'max_seq_len': benchmark_dim.max_seq_len,
         'mean_latency': mean_latency,
         'std_latency': std_latency,
-        'mean_latency_all_div': mean_latency_all_div
+        'mean_latency_all_div': mean_latency_all_div,
+        'kv_cache_size': CACHE_SIZE_PER_TOKEN * benchmark_dim.max_seq_len * benchmark_dim.batch_size
     })
     
 df = pd.DataFrame(benchmark_results)

@@ -144,6 +144,7 @@ class ModelRunner:
         if (
             self.config.scheduler_config.get_type() == SchedulerType.SARATHI
             or self.config.scheduler_config.get_type() == SchedulerType.SIMPLE_CHUNKING
+            or self.config.scheduler_config.get_type() == SchedulerType.ROLLING_PREEMPTION_PROFILING
         ):
             # Profile memory usage with a single `chunk_size` chunk
             # which is the last chunk in the longest supported sequence.
@@ -210,6 +211,7 @@ class ModelRunner:
         cache_block_size = self.attention_backend_wrapper.get_cache_block_size()
         print(f"Cache size per token: {cache_block_size / block_size}, Cache block size: {cache_block_size}, Block size: {block_size}")
 
+        print(f"Total GPU memory: {total_gpu_memory}, Utilization: {gpu_memory_utilization}, Peak memory: {peak_memory}")
         num_gpu_blocks = int(
             (total_gpu_memory * gpu_memory_utilization - peak_memory)
             // cache_block_size

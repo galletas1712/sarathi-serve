@@ -256,14 +256,6 @@ class BaseWorker:
             f"{self.config.replica_config.output_dir}/profiler_trace_rank_{self.rank}.json"
         )
     
-    @synchronized
-    def terminate(self) -> None:
-        self.cache_engine.gpu_cache.clear()
-        del self.model_runner.model
-        del self.model_runner
-        gc.collect()
-        torch.cuda.empty_cache()
-
 
 def _init_distributed_environment(
     parallel_config: ParallelConfig,
