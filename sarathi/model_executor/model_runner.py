@@ -135,6 +135,7 @@ class ModelRunner:
         if (
             self.config.scheduler_config.get_type() == SchedulerType.SARATHI
             or self.config.scheduler_config.get_type() == SchedulerType.SIMPLE_CHUNKING
+            or self.config.scheduler_config.get_type() == SchedulerType.ROLLING_PREEMPTION_PROFILING
         ):
             # Profile memory usage with a single `chunk_size` chunk
             # which is the last chunk in the longest supported sequence.

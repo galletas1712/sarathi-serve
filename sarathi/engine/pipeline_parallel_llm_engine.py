@@ -195,3 +195,7 @@ class PipelineParallelLLMEngine(BaseLLMEngine):
             return self.output_queue.get(block=False)
         except Empty:
             return []
+    
+    def _unbind_zmq_sockets(self):
+        super()._unbind_zmq_sockets()
+        self.microbatch_socket.close()
