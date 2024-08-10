@@ -126,13 +126,15 @@ class RollingPreemptionProfilingScheduler(BaseScheduler):
                 ignored_seq_ids.append(seq.seq_id)
                 continue
 
-            # If the sequence group cannot be allocated, stop.
-            assert self.block_manager.can_allocate(seq)
-
             # The total number of sequences in the RUNNING state should not
             # exceed the maximum number of sequences.
             if len(running) >= self.scheduler_config.max_num_seqs:
                 break
+        
+            print(f"Allocating request ({seq.seq_id}), len(running) = {len(running)}, max_num_seqs = {self.scheduler_config.max_num_seqs}")
+
+            # If the sequence group cannot be allocated, stop.
+            assert self.block_manager.can_allocate(seq)
 
             # check if we can fit the prefill in the batch
             next_num_prefill_tokens = self._get_seq_next_num_prefill_tokens(

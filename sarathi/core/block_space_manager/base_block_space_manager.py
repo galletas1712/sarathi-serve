@@ -78,6 +78,8 @@ class BaseBlockSpaceManager(ABC):
         # the same prompt. This may not be true for preempted sequences.
         num_required_blocks = self.get_num_initial_blocks(seq)
         num_free_gpu_blocks = self.gpu_allocator.get_num_free_blocks()
+        print("Number of required blocks:", num_required_blocks)
+        print("Number of free blocks:", num_free_gpu_blocks)
         # Use watermark to avoid frequent cache eviction.
         return num_free_gpu_blocks - num_required_blocks >= self.watermark_blocks
 
