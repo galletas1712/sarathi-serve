@@ -10,11 +10,12 @@ from sarathi.config.config import BaseEndpointConfig, ReplicaConfig, RollingPree
 from dataclasses import dataclass
 
 CACHE_SIZE_PER_TOKEN = 131072 # Determined by the model
-TOKEN_SIZE_LOG_MAX = 17  # Determined by number of GPU blocks (~ GPU HBM size)
-MAX_MODEL_TOKENS = 8192
+CHUNK_SIZE_LOG_MIN = 8 # Arbitrary
+TOKEN_SIZE_LOG_MIN = 8 # Arbitrary, but should be at least chunk size min
+TOKEN_SIZE_LOG_MAX = 17  # Determined by number of GPU blocks (~ GPU HBM size).
+MAX_MODEL_TOKENS = 65536 # Should have been 131072 but we truncate to 65536 otherwise it throws a CUDA error
 NUM_PASSES = 4
 
-chunk_size_logs = [11, 10, 9, 8, 7, 6]
 
 benchmark_config = BenchmarkConfig.create_from_cli_args()
 replica_config = ReplicaConfig(
@@ -31,16 +32,17 @@ class BenchmarkDim:
 
 benchmark_dims = []
 
-for chunk_size_log in chunk_size_logs:
-    assert chunk_size_log <= TOKEN_SIZE_LOG_MAX
+token_count_logs = torch.linspace(start=TOKEN_SIZE_LOG_MIN, end=TOKEN_SIZE_LOG_MAX, steps=TOKEN_SIZE_LOG_MAX-TOKEN_SIZE_LOG_MIN+1, dtype=int).tolist()
+token_count_logs = reversed(token_count_logs)
 
-    chunk_size = int(2 ** chunk_size_log)
+for token_count_log in token_count_logs:
+    token_count = int(2 ** token_count_log)
 
-    token_count_logs = torch.linspace(start=chunk_size_log, end=TOKEN_SIZE_LOG_MAX, steps=TOKEN_SIZE_LOG_MAX-chunk_size_log+1, dtype=int).tolist()
-    token_count_logs = reversed(token_count_logs)
-
-    for token_count_log in token_count_logs:
-        token_count = 2 ** token_count_log
+    chunk_size_log_max = min(token_count_log, int(math.log2(MAX_MODEL_TOKENS)))
+    chunk_size_logs = torch.linspace(start=CHUNK_SIZE_LOG_MIN, end=chunk_size_log_max, steps=chunk_size_log_max-CHUNK_SIZE_LOG_MIN+1, dtype=int).tolist()
+    chunk_size_logs = reversed(chunk_size_logs)
+    for chunk_size_log in chunk_size_logs:
+        chunk_size = int(2 ** chunk_size_log)
 
         batch_size_log_lo = max(token_count_log - int(math.log2(MAX_MODEL_TOKENS)), 0)
         batch_size_log_hi = token_count_log - chunk_size_log
@@ -50,9 +52,7 @@ for chunk_size_log in chunk_size_logs:
             max_seq_len = token_count // batch_size
             benchmark_dims.append(BenchmarkDim(max_seq_len, batch_size, chunk_size))
 
-for benchmark_dim in benchmark_dims:
-    print(benchmark_dim)
-
+print(benchmark_dims)
 
 benchmark_results = []
 for benchmark_dim in benchmark_dims:

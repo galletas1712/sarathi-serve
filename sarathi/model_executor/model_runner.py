@@ -150,6 +150,7 @@ class ModelRunner:
             # which is the last chunk in the longest supported sequence.
             chunk_size = self.config.scheduler_config.chunk_size
             seq_len = self.config.model_config.max_model_len
+            print("Max model seq len", seq_len)
             chunk_size = min(chunk_size, seq_len)
             seq = Sequence(
                 seq_id=0,

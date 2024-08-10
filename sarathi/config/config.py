@@ -16,7 +16,7 @@ logger = init_logger(__name__)
 @dataclass
 class ModelConfig:
     model: str = field(
-        default="meta-llama/Meta-Llama-3-8B-Instruct",
+        default="meta-llama/Meta-Llama-3.1-8B-Instruct",
         metadata={"help": "Name or path of the huggingface model to use."},
     )
     trust_remote_code: bool = field(

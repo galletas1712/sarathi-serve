@@ -97,9 +97,12 @@ def get_and_verify_max_len(
             )
         assert "factor" in rope_scaling
         scaling_factor = rope_scaling["factor"]
-        if rope_scaling["type"] == "yarn":
-            derived_max_model_len = rope_scaling["original_max_position_embeddings"]
-        derived_max_model_len *= scaling_factor
+        rope_type = rope_scaling["type"] if "type" in rope_scaling else rope_scaling["rope_type"]
+        if rope_type != "llama3":
+            if rope_type == "yarn":
+                derived_max_model_len = rope_scaling["original_max_position_embeddings"]
+            derived_max_model_len *= scaling_factor
+            derived_max_model_len = int(derived_max_model_len)
 
     if max_model_len is None:
         logger.info(f"Using the derived maximum model length: {derived_max_model_len}")

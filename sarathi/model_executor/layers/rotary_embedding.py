@@ -298,6 +298,55 @@ class YaRNScalingRotaryEmbedding(RotaryEmbedding):
         return cache
 
 
+class Llama3RotaryEmbedding(RotaryEmbedding):
+    """Llama 3.1 rotary positional embedding."""
+
+    def __init__(
+        self,
+        head_size: int,
+        rotary_dim: int,
+        max_position_embeddings: int,
+        base: int,
+        is_neox_style: bool,
+        scaling_factor: float,
+        low_freq_factor: float,
+        high_freq_factor: float,
+        old_context_len: int,
+    ) -> None:
+        self.scaling_factor = scaling_factor
+        self.low_freq_factor = low_freq_factor
+        self.high_freq_factor = high_freq_factor    
+        self.old_context_len = old_context_len
+        super().__init__(head_size, rotary_dim, max_position_embeddings, base, is_neox_style)
+
+    def _compute_cos_sin_cache(self) -> torch.Tensor:
+        """Compute the cos and sin cache."""
+        inv_freq = self._compute_inv_freq(self.base)
+
+        # Applying scaling
+        low_freq_wavelen = self.old_context_len / self.low_freq_factor
+        high_freq_wavelen = self.old_context_len / self.high_freq_factor
+        new_freqs = []
+        for freq in inv_freq:
+            wavelen = 2 * math.pi / freq
+            if wavelen < high_freq_wavelen:
+                new_freqs.append(freq)
+            elif wavelen > low_freq_wavelen:
+                new_freqs.append(freq / self.scaling_factor)
+            else:
+                assert low_freq_wavelen != high_freq_wavelen
+                smooth = (self.old_context_len / wavelen - self.low_freq_factor) / (self.high_freq_factor - self.low_freq_factor)
+                new_freqs.append((1 - smooth) * freq / self.scaling_factor + smooth * freq)
+        inv_freq = torch.tensor(new_freqs, dtype=inv_freq.dtype, device=inv_freq.device)
+
+        t = torch.arange(self.max_position_embeddings, dtype=torch.float, device="cuda")
+        freqs = torch.einsum("i,j -> ij", t, inv_freq)
+        cos = freqs.cos()
+        sin = freqs.sin()
+        cache = torch.cat((cos, sin), dim=-1)
+        return cache
+
+
 def get_rope(
     head_size: int,
     rotary_dim: int,
@@ -311,7 +360,7 @@ def get_rope(
             head_size, rotary_dim, max_position, base, is_neox_style
         )
     else:
-        scaling_type = rope_scaling["type"]
+        scaling_type = rope_scaling["type"] if "type" in rope_scaling else rope_scaling["rope_type"]
         scaling_factor = rope_scaling["factor"]
         if scaling_type == "linear":
             rotary_emb = LinearScalingRotaryEmbedding(
@@ -338,6 +387,18 @@ def get_rope(
                 is_neox_style,
                 scaling_factor,
                 **extra_kwargs,
+            )
+        elif scaling_type == "llama3":
+            rotary_emb = Llama3RotaryEmbedding(
+                head_size,
+                rotary_dim,
+                max_position,
+                base,
+                is_neox_style,
+                scaling_factor,
+                rope_scaling["low_freq_factor"],
+                rope_scaling["high_freq_factor"],
+                rope_scaling["original_max_position_embeddings"],
             )
         else:
             raise ValueError(f"Unknown RoPE scaling type {scaling_type}")
