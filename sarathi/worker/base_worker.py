@@ -59,7 +59,7 @@ class BaseWorker:
         # Uninitialized cache engine. Will be initialized by
         # self.init_cache_engine().
         self.cache_engine = None
-        self.gpu_cache = None
+
         # Sequence manager also needs number of blocks for initialization
         self.seq_manager = None
 
@@ -182,7 +182,11 @@ class BaseWorker:
         torch.cuda.synchronize()
         batch_stage_start_time = time.monotonic()
 
-        _, seq_metadata_list = self.seq_manager.on_schedule(scheduler_outputs)
+        _, seq_metadata_list = self.seq_manager.on_schedule(scheduler_outputs, self.cache_engine.gpu_cache)
+
+        swap_in_mapping, swap_out_mapping = self.seq_manager.get_and_clear_swap_mappings()
+        self.cache_engine.swap_out(swap_out_mapping)
+        self.cache_engine.swap_in(swap_in_mapping)
 
         sampler_outputs = self.model_runner.run(
             seq_metadata_list,

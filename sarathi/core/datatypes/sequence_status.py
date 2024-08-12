@@ -8,6 +8,7 @@ class SequenceStatus(enum.Enum):
     WAITING = enum.auto()
     RUNNING = enum.auto()
     PAUSED = enum.auto()
+    SWAPPED = enum.auto()
     FINISHED_STOPPED = enum.auto()
     FINISHED_LENGTH_CAPPED = enum.auto()
     FINISHED_IGNORED = enum.auto()
@@ -29,7 +30,11 @@ class SequenceStatus(enum.Enum):
 
     @staticmethod
     def is_waiting(status: "SequenceStatus") -> bool:
-        return status == SequenceStatus.WAITING
+        return status == SequenceStatus.WAITING or status == SequenceStatus.SWAPPED
+    
+    @staticmethod
+    def is_swapped(status: "SequenceStatus") -> bool:
+        return status == SequenceStatus.SWAPPED
 
     @staticmethod
     def is_paused(status: "SequenceStatus") -> bool:

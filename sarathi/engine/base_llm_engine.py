@@ -238,6 +238,7 @@ class BaseLLMEngine:
                 f"Try decreasing `max_batch_size`, `max_model_len`."
             )
         self.config.cache_config.num_gpu_blocks = num_gpu_blocks
+        self.config.cache_config.num_cpu_blocks = num_gpu_blocks  # TODO: change this later. We're just matching the number of GPU blocks for now
 
         # Initialize the cache.
         self._run_workers(

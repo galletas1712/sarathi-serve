@@ -159,6 +159,12 @@ class CacheConfig:
             "help": "Number of GPU blocks for caching. This gets set after profiling."
         },
     )
+    num_cpu_blocks: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "Number of CPU blocks for caching. This gets set after profiling."
+        },
+    )
 
 
 @dataclass

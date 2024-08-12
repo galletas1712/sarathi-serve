@@ -39,6 +39,7 @@ class BaseScheduler(ABC):
             scheduler_config.get_type(),
             cache_config.block_size,
             cache_config.num_gpu_blocks,
+            cache_config.num_cpu_blocks,
             model_config.max_model_len,
         )
         self.prompt_limit = model_config.max_model_len
@@ -120,6 +121,21 @@ class BaseScheduler(ABC):
         assert seq.is_executing()
         self._free_seq(seq)
         self.waiting.insert(0, seq)
+    
+    def _swap_out(
+        self,
+        seq: Sequence,
+    ) -> None:
+        assert seq.is_executing()
+        self.block_manager.swap_out(seq)
+        self.waiting.insert(0, seq)
+    
+    def _swap_in(
+        self,
+        seq: Sequence,
+    ) -> None:
+        assert seq.is_swapped()
+        self.block_manager.swap_in(seq)
 
     def _check_request_prompt_length(self, seq: Sequence) -> bool:
         if seq.get_len() > self.prompt_limit:

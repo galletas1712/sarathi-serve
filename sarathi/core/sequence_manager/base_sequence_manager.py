@@ -37,6 +37,12 @@ class BaseSequenceManager(ABC):
         assert seq.is_executing()
         seq.reset_for_recompute()
 
+    def _swap_seq(self, seq_id: str) -> None:
+        assert seq_id in self.seq_map
+        seq = self.seq_map[seq_id]
+        assert seq.is_executing(), f"seq_id: {seq_id}, status: {seq.get_status()}"
+        seq.set_status(SequenceStatus.SWAPPED)
+
     def _pause_seq(self, seq_id: str) -> None:
         assert seq_id in self.seq_map
         seq = self.seq_map[seq_id]
@@ -71,7 +77,10 @@ class BaseSequenceManager(ABC):
 
         for seq_id in scheduler_outputs.preempted_seq_ids:
             self._preempt_seq(seq_id)
-
+        
+        for seq_id in scheduler_outputs.swapped_seq_ids:
+            self._swap_seq(seq_id)
+        
         seq_metadata_list: List[SequenceMetadata] = []
 
         for seq_sched_metadata in scheduler_outputs.scheduled_seq_metadata_list:

@@ -59,6 +59,10 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
             self.head_dim,
             **kwargs,
         )
+    
+    def swap_blocks(self, src: torch.Tensor, dst: torch.Tensor, src_to_dst: torch.Tensor) -> None:
+        for i in range(src_to_dst.shape[0]):
+            dst[src_to_dst[i, 1]] = src[src_to_dst[i, 0]]
 
     def begin_forward(
         self,

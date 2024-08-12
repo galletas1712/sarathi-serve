@@ -10,11 +10,13 @@ class SchedulerOutputs:
         id: int,
         ignored_seq_ids: List[str],
         preempted_seq_ids: List[str],
+        swapped_seq_ids: List[str],
         scheduled_seq_metadata_list: List[SequenceScheduleMetadata],
     ) -> None:
         self.id = id
         self.ignored_seq_ids = ignored_seq_ids
         self.preempted_seq_ids = preempted_seq_ids
+        self.swapped_seq_ids = swapped_seq_ids
         self.scheduled_seq_metadata_list = sorted(
             scheduled_seq_metadata_list, key=lambda x: not x.is_prompt
         )
@@ -38,6 +40,7 @@ class SchedulerOutputs:
             not self.scheduled_seq_metadata_list
             and not self.ignored_seq_ids
             and not self.preempted_seq_ids
+            and not self.swapped_seq_ids
         )
 
     @property
@@ -49,5 +52,6 @@ class SchedulerOutputs:
             f"SchedulerOutputs(id={self.id}, "
             f"ignored_seq_ids={self.ignored_seq_ids}, "
             f"preempted_seq_ids={self.preempted_seq_ids}, "
+            f"swapped_seq_ids={self.swapped_seq_ids}, "
             f"scheduled_seq_metadata_list={self.scheduled_seq_metadata_list})"
         )

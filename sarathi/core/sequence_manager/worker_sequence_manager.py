@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 
 from sarathi.config import SystemConfig
 from sarathi.core.block_space_manager.block_space_manager_registry import (
@@ -37,18 +37,34 @@ class WorkerSequenceManager(BaseSequenceManager):
         super()._preempt_seq(seq_id)
         seq = self.seq_map[seq_id]
         self.block_manager.free(seq)
-
+    
+    def _swap_seq(self, seq_id: str) -> None:
+        super()._swap_seq(seq_id)
+        seq = self.seq_map[seq_id]
+        self.block_manager.swap_out(seq)
+    
     def _on_seq_scheduled(self, seq_sched_metadata: SequenceScheduleMetadata) -> None:
-        super()._on_seq_scheduled(seq_sched_metadata)
+        assert seq_sched_metadata.seq_id in self.seq_map
         seq = self.seq_map[seq_sched_metadata.seq_id]
+        needs_swapping_in = seq.is_swapped()
 
-        if self.block_manager.is_allocated(seq):
-            self.block_manager.can_append_slot()
-            self.block_manager.append_slot(seq)
+        super()._on_seq_scheduled(seq_sched_metadata)  # This just sets the status to resumed
+
+        if self.block_manager.is_allocated_in_gpu(seq):
+            assert not needs_swapping_in
+            # NOTE: We only need to append blocks in decode mode - with chunked prefill we preallocate all prefill blocks beforehand
+            if not seq_sched_metadata.is_prompt:
+                self.block_manager.can_append_slot() # GPU by default
+                self.block_manager.append_slot(seq)
+        elif self.block_manager.is_allocated_in_cpu(seq):
+            assert needs_swapping_in
+            self.block_manager.swap_in(seq)
         else:
+            # This case is either when a request is new or was previously preempted, could be in either phase
+            assert not needs_swapping_in
             # lazily allocate memory when a seq
             # is allocated for the first time
-            assert self.block_manager.can_allocate(seq)
+            assert self.block_manager.can_allocate(seq) # GPU by default
             self.block_manager.allocate(seq)
 
     def _on_append_token(self, seq: Sequence) -> None:
@@ -58,3 +74,6 @@ class WorkerSequenceManager(BaseSequenceManager):
 
     def _get_block_table(self, seq: Sequence) -> List[int]:
         return self.block_manager.get_block_table(seq)
+
+    def get_and_clear_swap_mappings(self) -> Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]:
+        return self.block_manager.get_and_clear_swap_mappings()

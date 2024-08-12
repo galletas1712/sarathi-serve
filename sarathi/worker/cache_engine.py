@@ -30,19 +30,43 @@ class CacheEngine:
 
         self.block_size = config.cache_config.block_size
         self.num_gpu_blocks = config.cache_config.num_gpu_blocks
+        self.num_cpu_blocks = config.cache_config.num_cpu_blocks
+
+        assert self.num_gpu_blocks is not None
+        assert self.num_cpu_blocks is not None
 
         # Initialize the cache.
-        self.gpu_cache = self.allocate_gpu_cache()
+        self.gpu_cache = self._allocate_kv_cache(self.num_gpu_blocks, "cuda")
+        self.cpu_cache = self._allocate_kv_cache(self.num_cpu_blocks, "cpu")
 
-    def allocate_gpu_cache(self) -> List[torch.Tensor]:
-        gpu_cache: List[torch.Tensor] = []
-
+    def _allocate_kv_cache(
+        self,
+        num_blocks: int,
+        device: str,
+    ) -> List[torch.Tensor]:
+        """Allocates KV cache on the specified device."""
+        kv_cache: List[torch.Tensor] = []
         for _ in range(self.num_layers):
-            gpu_blocks = get_attention_wrapper().get_cache_block(
-                self.num_gpu_blocks, dtype=self.dtype, device="cuda"
-            )
-            gpu_cache.append(gpu_blocks)
-        return gpu_cache
+            kv_cache.append(
+                get_attention_wrapper().get_cache_block(
+                    num_blocks,
+                    dtype=self.dtype,
+                    pin_memory=(device == "cpu"),
+                    device=device)
+                )
+        return kv_cache
+
+    def swap_in(self, src_to_dst: List[Tuple[int, int]]) -> None:
+        src_to_dst = torch.as_tensor(src_to_dst, dtype=torch.int64)
+        for i in range(self.num_layers):
+            get_attention_wrapper().swap_blocks(self.cpu_cache[i], self.gpu_cache[i],
+                                          src_to_dst)
+
+    def swap_out(self, src_to_dst: List[Tuple[int, int]]) -> None:
+        src_to_dst = torch.as_tensor(src_to_dst, dtype=torch.int64)
+        for i in range(self.num_layers):
+            get_attention_wrapper().swap_blocks(self.gpu_cache[i], self.cpu_cache[i],
+                                          src_to_dst)
 
     @staticmethod
     def get_cache_block_size(
