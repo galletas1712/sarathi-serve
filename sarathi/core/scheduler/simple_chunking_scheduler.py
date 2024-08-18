@@ -112,6 +112,7 @@ class SimpleChunkingScheduler(BaseScheduler):
                 id=self._iteration_id,
                 ignored_seq_ids=ignored_seq_ids,
                 preempted_seq_ids=preempted_seq_ids,
+                swapped_seq_ids=[],
                 scheduled_seq_metadata_list=scheduled_seq_metadata_list,
             )
 
@@ -157,6 +158,7 @@ class SimpleChunkingScheduler(BaseScheduler):
                 id=self._iteration_id,
                 ignored_seq_ids=ignored_seq_ids,
                 preempted_seq_ids=preempted_seq_ids,
+                swapped_seq_ids=[],
                 scheduled_seq_metadata_list=scheduled_seq_metadata_list,
             )
 
@@ -200,6 +202,7 @@ class SimpleChunkingScheduler(BaseScheduler):
             id=self._iteration_id,
             ignored_seq_ids=ignored_seq_ids,
             preempted_seq_ids=preempted_seq_ids,
+            swapped_seq_ids=[],
             scheduled_seq_metadata_list=scheduled_seq_metadata_list,
         )
         return scheduler_outputs

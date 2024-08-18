@@ -34,3 +34,4 @@ BlockSpaceManagerRegistry.register(
     SchedulerType.SIMPLE_CHUNKING, SimpleChunkingBlockSpaceManager
 )
 BlockSpaceManagerRegistry.register(SchedulerType.ROLLING_PREEMPTION_PROFILING, SarathiBlockSpaceManager)
+BlockSpaceManagerRegistry.register(SchedulerType.OCCASIONAL_SWAPPING, SarathiBlockSpaceManager)

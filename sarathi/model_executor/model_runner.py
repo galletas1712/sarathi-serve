@@ -9,10 +9,10 @@ from sarathi.core.datatypes.sequence import Sequence, SequenceMetadata
 from sarathi.logger import init_logger
 from sarathi.metrics.constants import CpuOperationMetrics
 from sarathi.metrics.cpu_timer import CpuTimer
-from sarathi.model_executor import get_model, set_random_seed
+from sarathi.model_executor.model_loader import get_model
 from sarathi.model_executor.attention import get_attention_wrapper
 from sarathi.model_executor.layers.sampler import Sampler
-from sarathi.model_executor.utils import pad_to_alignment
+from sarathi.model_executor.utils import pad_to_alignment, set_random_seed
 from sarathi.utils import get_gpu_memory
 from sarathi.worker.cache_engine import CacheEngine
 
@@ -136,6 +136,7 @@ class ModelRunner:
             self.config.scheduler_config.get_type() == SchedulerType.SARATHI
             or self.config.scheduler_config.get_type() == SchedulerType.SIMPLE_CHUNKING
             or self.config.scheduler_config.get_type() == SchedulerType.ROLLING_PREEMPTION_PROFILING
+            or self.config.scheduler_config.get_type() == SchedulerType.OCCASIONAL_SWAPPING
         ):
             # Profile memory usage with a single `chunk_size` chunk
             # which is the last chunk in the longest supported sequence.

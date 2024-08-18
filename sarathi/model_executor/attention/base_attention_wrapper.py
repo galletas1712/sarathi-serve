@@ -7,6 +7,7 @@ from sarathi.config import ModelConfig, ParallelConfig
 from sarathi.core.datatypes.sequence import SequenceMetadata
 from sarathi.metrics.constants import OperationMetrics
 from sarathi.metrics.cuda_timer import CudaTimer
+from sarathi.cache_ops import swap_blocks
 
 
 class BaseAttentionWrapper(ABC):
@@ -37,6 +38,9 @@ class BaseAttentionWrapper(ABC):
         if self._timers.get((operation, layer_id)) is None:
             self._timers[(operation, layer_id)] = CudaTimer(operation, layer_id)
         return self._timers.get((operation, layer_id))
+
+    def swap_blocks(self, src: torch.Tensor, dst: torch.Tensor, src_to_dst: torch.Tensor) -> None:
+        swap_blocks(src, dst, src_to_dst)
 
     @abstractmethod
     def begin_forward(

@@ -247,9 +247,22 @@ class SequenceState:
             self._completed_at = current_time
         elif status == SequenceStatus.RUNNING:
             self._last_execution_start_at = current_time
-        elif status == SequenceStatus.WAITING:
+        elif status == SequenceStatus.WAITING or status == SequenceStatus.SWAPPED:
             self._num_restarts += 1
             self._last_restart_at = current_time
+        else:
+            raise ValueError(
+                f"Invalid state transition from {self._status} to {status} for request {self._id}."
+            )
+
+    def _handle_transitions_from_swapped_status(
+        self, current_time: float, status: SequenceStatus
+    ) -> None:
+        self._preempted_time += current_time - self._last_pause_at
+
+        if status == SequenceStatus.RUNNING:
+            assert self._num_restarts > 0
+            self._preempted_time += current_time - self._last_restart_at
         else:
             raise ValueError(
                 f"Invalid state transition from {self._status} to {status} for request {self._id}."
@@ -264,6 +277,8 @@ class SequenceState:
             self._handle_transitions_from_running_status(current_time, status)
         elif self._status == SequenceStatus.PAUSED:
             self._handle_transitions_from_paused_status(current_time, status)
+        elif self._status == SequenceStatus.SWAPPED:
+            self._handle_transitions_from_swapped_status(current_time, status)
         else:
             raise ValueError(
                 f"Invalid state transition from {self._status} to {status} for request {self._id}."

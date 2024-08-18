@@ -57,16 +57,24 @@ class CacheEngine:
         return kv_cache
 
     def swap_in(self, src_to_dst: List[Tuple[int, int]]) -> None:
-        src_to_dst = torch.as_tensor(src_to_dst, dtype=torch.int64)
+        src_to_dst = torch.tensor(src_to_dst, dtype=torch.int64, device="cpu")
         for i in range(self.num_layers):
             get_attention_wrapper().swap_blocks(self.cpu_cache[i], self.gpu_cache[i],
                                           src_to_dst)
+        torch.cuda.synchronize()
+        # for i in range(self.num_layers):
+        #     for j in range(len(src_to_dst)):
+        #         assert (self.cpu_cache[i][src_to_dst[j][0]] == self.gpu_cache[i][src_to_dst[j][1]].to("cpu", copy=True)).all()
 
     def swap_out(self, src_to_dst: List[Tuple[int, int]]) -> None:
-        src_to_dst = torch.as_tensor(src_to_dst, dtype=torch.int64)
+        src_to_dst = torch.tensor(src_to_dst, dtype=torch.int64, device="cpu")
         for i in range(self.num_layers):
             get_attention_wrapper().swap_blocks(self.gpu_cache[i], self.cpu_cache[i],
                                           src_to_dst)
+        torch.cuda.synchronize()
+        # for i in range(self.num_layers):
+        #     for j in range(len(src_to_dst)):
+        #         assert (self.gpu_cache[i][src_to_dst[j][0]].to("cpu", copy=True) == self.cpu_cache[i][src_to_dst[j][1]]).all()
 
     @staticmethod
     def get_cache_block_size(

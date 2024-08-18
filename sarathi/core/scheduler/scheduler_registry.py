@@ -7,6 +7,7 @@ from sarathi.core.scheduler.rolling_preemption_profiling_scheduler import Rollin
 from sarathi.core.scheduler.sarathi_scheduler import SarathiScheduler
 from sarathi.core.scheduler.simple_chunking_scheduler import SimpleChunkingScheduler
 from sarathi.core.scheduler.vllm_scheduler import VLLMScheduler
+from sarathi.core.scheduler.occasional_swapping_scheduler import OccasionalSwappingScheduler
 from sarathi.utils.base_registry import BaseRegistry
 
 
@@ -23,3 +24,4 @@ SchedulerRegistry.register(SchedulerType.FASTER_TRANSFORMER, FasterTransformerSc
 SchedulerRegistry.register(SchedulerType.SARATHI, SarathiScheduler)
 SchedulerRegistry.register(SchedulerType.SIMPLE_CHUNKING, SimpleChunkingScheduler)
 SchedulerRegistry.register(SchedulerType.ROLLING_PREEMPTION_PROFILING, RollingPreemptionProfilingScheduler)
+SchedulerRegistry.register(SchedulerType.OCCASIONAL_SWAPPING, OccasionalSwappingScheduler)

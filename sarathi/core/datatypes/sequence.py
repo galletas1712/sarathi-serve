@@ -171,6 +171,9 @@ class Sequence:
 
     def is_running(self) -> bool:
         return SequenceStatus.is_running(self.get_status())
+    
+    def is_swapped(self) -> bool:
+        return SequenceStatus.is_swapped(self.get_status())
 
     def reset_for_recompute(self):
         self.set_status(SequenceStatus.WAITING)

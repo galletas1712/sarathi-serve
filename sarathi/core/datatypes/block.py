@@ -58,7 +58,4 @@ class PhysicalTokenBlock:
         self.block_size = block_size
 
     def __repr__(self) -> str:
-        return (
-            f"PhysicalTokenBlock(device={self.device}, "
-            f"block_number={self.block_number})"
-        )
+        return str(self.block_number)

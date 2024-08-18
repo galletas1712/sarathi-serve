@@ -135,6 +135,17 @@ moe_extension = CUDAExtension(
 )
 ext_modules.append(moe_extension)
 
+# Cache kernels
+cache_kernel_extension = CUDAExtension(
+    name="sarathi.cache_ops",
+    sources=["csrc/cache.cpp", "csrc/cache_kernels.cu"],
+    extra_compile_args={
+        "cxx": CXX_FLAGS,
+        "nvcc": NVCC_FLAGS,
+    },
+)
+ext_modules.append(cache_kernel_extension)
+
 def get_path(*filepath) -> str:
     return os.path.join(ROOT_DIR, *filepath)
 

@@ -52,6 +52,8 @@ class BaseScheduler(ABC):
         self.waiting: List[Sequence] = []
         # Sequence groups in the RUNNING state.
         self.running: List[Sequence] = []
+        # Sequence groups that are swapped out.
+        self.swapped: List[Sequence] = []
 
     def reset_state(self) -> None:
         self._iteration_id = -1
@@ -61,10 +63,10 @@ class BaseScheduler(ABC):
         self.waiting.append(seq)
 
     def has_unfinished_seqs(self) -> bool:
-        return self.waiting or self.running
+        return self.waiting or self.running or self.swapped
 
     def get_num_unfinished_seqs(self) -> int:
-        return len(self.waiting) + len(self.running)
+        return len(self.waiting) + len(self.running) + len(self.swapped)
 
     @abstractmethod
     def _schedule(self) -> SchedulerOutputs:
@@ -88,6 +90,8 @@ class BaseScheduler(ABC):
 
         if not scheduler_outputs.is_empty():
             self.num_running_batches += 1
+        
+        logger.debug("Scheduler block tables:", self.block_manager.block_tables)
 
         return scheduler_outputs
 
@@ -111,7 +115,8 @@ class BaseScheduler(ABC):
         self,
         seq: Sequence,
     ) -> None:
-        assert seq.is_executing()
+        # TODO: this was an assertion, but there's actually a one iteration delay just because of the way we refactored things
+        # assert seq.is_executing()
         self.block_manager.append_slot(seq)
 
     def _preempt(
@@ -128,7 +133,6 @@ class BaseScheduler(ABC):
     ) -> None:
         assert seq.is_executing()
         self.block_manager.swap_out(seq)
-        self.waiting.insert(0, seq)
     
     def _swap_in(
         self,

@@ -52,7 +52,7 @@ class BaseSequenceManager(ABC):
     def _resume_seq(self, seq_id: str) -> None:
         assert seq_id in self.seq_map
         seq = self.seq_map[seq_id]
-        assert seq.is_waiting() or seq.is_paused()
+        assert seq.is_waiting() or seq.is_paused() or seq.is_swapped(), f"seq_id: {seq_id}, status: {seq.get_status()}"
         seq.set_status(SequenceStatus.RUNNING)
 
     def _on_seq_scheduled(self, seq_sched_metadata: SequenceScheduleMetadata) -> None:
@@ -60,7 +60,7 @@ class BaseSequenceManager(ABC):
         self._resume_seq(seq_sched_metadata.seq_id)
 
     @abstractmethod
-    def _get_block_table(self, seq: Sequence) -> List[int]:
+    def _get_gpu_block_table(self, seq: Sequence) -> List[int]:
         pass
 
     @synchronized
@@ -89,7 +89,7 @@ class BaseSequenceManager(ABC):
             seq_metadata_list.append(
                 SequenceMetadata(
                     seq,
-                    self._get_block_table(seq),
+                    self._get_gpu_block_table(seq),
                     seq_sched_metadata.num_prompt_tokens,
                 )
             )
@@ -131,7 +131,7 @@ class BaseSequenceManager(ABC):
         ):
             assert scheduled_seq_metadata.seq_id == sampler_output.seq_id
             seq = self.seq_map[scheduled_seq_metadata.seq_id]
-            if seq.is_waiting():
+            if seq.is_waiting() or seq.is_swapped():
                 # seq is preempted
                 # this can happen with pipeline parallel -- if the system
                 # runs out of memory, it will preempt the last arrived request

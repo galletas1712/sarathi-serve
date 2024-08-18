@@ -160,9 +160,9 @@ class CacheConfig:
         },
     )
     num_cpu_blocks: Optional[int] = field(
-        default=None,
+        default=1024,
         metadata={
-            "help": "Number of CPU blocks for caching. This gets set after profiling."
+            "help": "Number of CPU blocks for caching."
         },
     )
 
@@ -295,6 +295,25 @@ class RollingPreemptionProfilingSchedulerConfig(BaseSchedulerConfig):
     @staticmethod
     def get_type():
         return SchedulerType.ROLLING_PREEMPTION_PROFILING
+
+
+@dataclass
+class OccasionalSwappingSchedulerConfig(BaseSchedulerConfig):
+    max_num_seqs: int = 8
+    chunk_size: int = field(
+        default=512,
+        metadata={"help": "Size of each chunk for simple chunking scheduler."},
+    )
+
+    max_num_batched_tokens: Optional[int] = None
+
+    def get_max_num_batched_tokens(self, max_model_len: int):
+        if self.max_num_batched_tokens is not None:
+            return self.max_num_batched_tokens
+
+    @staticmethod
+    def get_type():
+        return SchedulerType.OCCASIONAL_SWAPPING
 
 
 @dataclass

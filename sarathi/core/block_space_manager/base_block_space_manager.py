@@ -2,7 +2,6 @@
 
 from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple
-from collections import deque
 from enum import Enum
 
 from sarathi.core.datatypes.block import PhysicalTokenBlock
@@ -29,17 +28,15 @@ class BlockAllocator:
         self.num_blocks = num_blocks
 
         # Initialize the free blocks.
-        # NOTE: We use a queue here so swapped in blocks just recycle swapped out blocks
-        # Hopefully this means better cache locality
-        self.free_blocks: deque[PhysicalTokenBlock] = deque()
-        for i in range(num_blocks):
+        self.free_blocks: List[PhysicalTokenBlock] = []
+        for i in reversed(range(num_blocks)):
             block = PhysicalTokenBlock(block_number=i, block_size=block_size)
             self.free_blocks.append(block)
 
     def allocate(self) -> PhysicalTokenBlock:
         if not self.free_blocks:
             raise ValueError("Out of memory! No free blocks are available.")
-        block = self.free_blocks.popleft()
+        block = self.free_blocks.pop()
         return block
 
     def free(self, block: PhysicalTokenBlock) -> None:
@@ -107,7 +104,7 @@ class BaseBlockSpaceManager(ABC):
             block = self.allocators[initial_device].allocate()
             block_table.append(block)
 
-        self.block_tables[seq.seq_id][initial_device] = block_table
+        self.block_tables[seq.seq_id] = {initial_device: block_table}
 
     def can_append_slot(self, device: BlockDevice = BlockDevice.GPU) -> bool:
         assert device == BlockDevice.GPU
@@ -141,7 +138,8 @@ class BaseBlockSpaceManager(ABC):
         if seq_id not in self.block_tables:
             # Already freed or haven't been scheduled yet.
             return
-        for device in self.block_tables[seq_id].keys():
+        devices = list(self.block_tables[seq_id].keys())
+        for device in devices:
             self._free_device_blocks(seq_id, device)
 
     def free(self, seq: Sequence) -> None:
@@ -153,8 +151,8 @@ class BaseBlockSpaceManager(ABC):
             self._free_block_table(seq_id)
         self.block_tables.clear()
     
-    def get_block_table(self, seq: Sequence) -> List[int]:
-        block_table = self.block_tables[seq.seq_id]
+    def get_gpu_block_table(self, seq: Sequence) -> List[int]:
+        block_table = self.block_tables[seq.seq_id][BlockDevice.GPU]
         return [block.block_number for block in block_table]  # TODO: make into generator instead?
 
     def is_allocated_in_gpu(self, seq: Sequence) -> bool:
@@ -174,6 +172,8 @@ class BaseBlockSpaceManager(ABC):
     def swap_in(self, seq: Sequence) -> None:
         assert self.can_swap_in(seq)
 
+        self.block_tables[seq.seq_id][BlockDevice.GPU] = []
+
         for cpu_block in self.block_tables[seq.seq_id][BlockDevice.CPU]:
             gpu_block = self.allocators[BlockDevice.GPU].allocate()
             self.swap_in_mapping.append((cpu_block.block_number, gpu_block.block_number))
@@ -191,6 +191,8 @@ class BaseBlockSpaceManager(ABC):
     
     def swap_out(self, seq: Sequence) -> None:
         assert self.can_swap_out(seq)
+
+        self.block_tables[seq.seq_id][BlockDevice.CPU] = []
 
         for gpu_block in self.block_tables[seq.seq_id][BlockDevice.GPU]:
             cpu_block = self.allocators[BlockDevice.CPU].allocate()

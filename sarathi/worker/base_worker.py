@@ -1,6 +1,5 @@
 """A GPU worker class."""
 
-import gc
 import os
 import time
 from threading import Event, Thread
@@ -11,13 +10,14 @@ import torch.distributed
 import zmq
 
 from sarathi.config import CacheConfig, ParallelConfig, SystemConfig
+from sarathi.core.block_space_manager.base_block_space_manager import BlockDevice
 from sarathi.core.datatypes.comm_info import CommInfo
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
 from sarathi.core.datatypes.sequence import SamplerOutputs
 from sarathi.core.sequence_manager.worker_sequence_manager import WorkerSequenceManager
 from sarathi.logger import init_logger
 from sarathi.metrics.metrics_store import MetricsStore
-from sarathi.model_executor import set_random_seed
+from sarathi.model_executor.utils import set_random_seed
 from sarathi.model_executor.attention import set_attention_backend
 from sarathi.model_executor.model_runner import ModelRunner
 from sarathi.model_executor.parallel_utils.parallel_state import (
@@ -153,7 +153,6 @@ class BaseWorker:
         self.cache_engine = CacheEngine(
             self.config,
         )
-        self.gpu_cache = self.cache_engine.gpu_cache
 
         self.seq_manager = WorkerSequenceManager(
             self.config,
@@ -182,15 +181,22 @@ class BaseWorker:
         torch.cuda.synchronize()
         batch_stage_start_time = time.monotonic()
 
-        _, seq_metadata_list = self.seq_manager.on_schedule(scheduler_outputs, self.cache_engine.gpu_cache)
+        logger.debug("Scheduler outputs:", scheduler_outputs)
+
+        _, seq_metadata_list = self.seq_manager.on_schedule(scheduler_outputs)
+
+        for seq_metadata in seq_metadata_list:
+            logger.debug(seq_metadata.seq.seq_id, seq_metadata.block_table)
 
         swap_in_mapping, swap_out_mapping = self.seq_manager.get_and_clear_swap_mappings()
+
+        # NOTE: There is a CUDA synchrnonize behind here because cudaMemcpyAsync in the background
         self.cache_engine.swap_out(swap_out_mapping)
         self.cache_engine.swap_in(swap_in_mapping)
 
         sampler_outputs = self.model_runner.run(
             seq_metadata_list,
-            self.gpu_cache,
+            self.cache_engine.gpu_cache,
         )
 
         self.on_step_completed(scheduler_outputs, sampler_outputs)

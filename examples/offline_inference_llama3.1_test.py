@@ -2,7 +2,7 @@ import datetime
 from tqdm import tqdm
 from typing import List
 
-from sarathi.config import ModelConfig, ParallelConfig, SarathiSchedulerConfig, MetricsConfig, SystemConfig, ReplicaConfig
+from sarathi.config import ModelConfig, ParallelConfig, OccasionalSwappingSchedulerConfig, MetricsConfig, SystemConfig, ReplicaConfig
 from sarathi import LLMEngine, SamplingParams, RequestOutput
 
 
@@ -36,10 +36,7 @@ parallel_config = ParallelConfig(
     pipeline_parallel_size=1,
 )
 
-scheduler_config = SarathiSchedulerConfig(
-    chunk_size=100,
-    max_num_seqs=10,
-)
+scheduler_config = OccasionalSwappingSchedulerConfig()
 
 metrics_config = MetricsConfig(
     write_metrics=True,
