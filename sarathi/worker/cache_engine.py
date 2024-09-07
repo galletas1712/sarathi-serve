@@ -61,7 +61,7 @@ class CacheEngine:
         for i in range(self.num_layers):
             get_attention_wrapper().swap_blocks(self.cpu_cache[i], self.gpu_cache[i],
                                           src_to_dst)
-        torch.cuda.synchronize()
+        # torch.cuda.synchronize()
         # for i in range(self.num_layers):
         #     for j in range(len(src_to_dst)):
         #         assert (self.cpu_cache[i][src_to_dst[j][0]] == self.gpu_cache[i][src_to_dst[j][1]].to("cpu", copy=True)).all()
@@ -71,7 +71,7 @@ class CacheEngine:
         for i in range(self.num_layers):
             get_attention_wrapper().swap_blocks(self.gpu_cache[i], self.cpu_cache[i],
                                           src_to_dst)
-        torch.cuda.synchronize()
+        # torch.cuda.synchronize()
         # for i in range(self.num_layers):
         #     for j in range(len(src_to_dst)):
         #         assert (self.gpu_cache[i][src_to_dst[j][0]].to("cpu", copy=True) == self.cpu_cache[i][src_to_dst[j][1]]).all()

@@ -190,9 +190,10 @@ class BaseWorker:
 
         swap_in_mapping, swap_out_mapping = self.seq_manager.get_and_clear_swap_mappings()
 
-        # NOTE: There is a CUDA synchrnonize behind here because cudaMemcpyAsync in the background
         self.cache_engine.swap_out(swap_out_mapping)
+        torch.cuda.synchronize()  # Make sure all swap outs are done before swap ins
         self.cache_engine.swap_in(swap_in_mapping)
+        torch.cuda.synchronize()
 
         sampler_outputs = self.model_runner.run(
             seq_metadata_list,

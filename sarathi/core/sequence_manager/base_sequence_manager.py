@@ -78,6 +78,9 @@ class BaseSequenceManager(ABC):
         for seq_id in scheduler_outputs.preempted_seq_ids:
             self._preempt_seq(seq_id)
         
+        # NOTE: DANGER! Be very wary that what we're doing is updating the block tables for swap out first in _swap_seq,
+        # then updating the swap in block tables in self._on_seq_scheduled. This means we *have* to do all swap outs first,
+        # then all swap ins.
         for seq_id in scheduler_outputs.swapped_seq_ids:
             self._swap_seq(seq_id)
         
