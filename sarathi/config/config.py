@@ -160,7 +160,7 @@ class CacheConfig:
         },
     )
     num_cpu_blocks: Optional[int] = field(
-        default=1024,
+        default=24088,
         metadata={
             "help": "Number of CPU blocks for caching."
         },

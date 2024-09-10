@@ -51,7 +51,7 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
         return torch.tensor(data, dtype=torch.int32, device="cuda")
 
     def get_cache_block(self, num_blocks: int, **kwargs) -> torch.Tensor:
-        return torch.randn(
+        return torch.empty(
             num_blocks,
             2,
             self.block_size,
