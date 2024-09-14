@@ -247,7 +247,7 @@ class SequenceState:
             self._completed_at = current_time
         elif status == SequenceStatus.RUNNING:
             self._last_execution_start_at = current_time
-        elif status == SequenceStatus.WAITING or status == SequenceStatus.SWAPPED:
+        elif status == SequenceStatus.WAITING or status == SequenceStatus.SWAPPING_OUT:
             self._num_restarts += 1
             self._last_restart_at = current_time
         else:
@@ -255,6 +255,7 @@ class SequenceState:
                 f"Invalid state transition from {self._status} to {status} for request {self._id}."
             )
 
+    # TODO: this is kind of invalid right now
     def _handle_transitions_from_swapped_status(
         self, current_time: float, status: SequenceStatus
     ) -> None:
@@ -263,6 +264,9 @@ class SequenceState:
         if status == SequenceStatus.RUNNING:
             assert self._num_restarts > 0
             self._preempted_time += current_time - self._last_restart_at
+        elif status == SequenceStatus.SWAPPING_IN:
+            # TODO: also something here
+            pass
         else:
             raise ValueError(
                 f"Invalid state transition from {self._status} to {status} for request {self._id}."
@@ -277,8 +281,13 @@ class SequenceState:
             self._handle_transitions_from_running_status(current_time, status)
         elif self._status == SequenceStatus.PAUSED:
             self._handle_transitions_from_paused_status(current_time, status)
-        elif self._status == SequenceStatus.SWAPPED:
+        elif self._status == SequenceStatus.SWAPPED_OUT:
             self._handle_transitions_from_swapped_status(current_time, status)
+        elif self._status == SequenceStatus.SWAPPING_OUT:
+            pass
+        elif self._status == SequenceStatus.SWAPPING_IN:
+            # TODO: deal with these later
+            pass
         else:
             raise ValueError(
                 f"Invalid state transition from {self._status} to {status} for request {self._id}."

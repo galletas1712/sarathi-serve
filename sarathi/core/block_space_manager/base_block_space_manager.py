@@ -77,8 +77,8 @@ class BaseBlockSpaceManager(ABC):
         self.block_tables: Dict[str, Dict[str, BlockTable]] = {}
 
         # Stores pending swaps
-        self.swap_in_mapping: List[Tuple[int, int]] = []
-        self.swap_out_mapping: List[Tuple[int, int]] = []
+        self.swap_in_mapping: Dict[str, List[Tuple[int, int]]] = {}
+        self.swap_out_mapping: Dict[str, List[Tuple[int, int]]] = {}
 
     @abstractmethod
     def get_num_initial_blocks(self, seq: Sequence) -> int:
@@ -124,10 +124,6 @@ class BaseBlockSpaceManager(ABC):
             block = self.allocators[device].allocate()
             block_table.append(block)
 
-    def _get_physical_blocks(self, seq: Sequence, device: BlockDevice = BlockDevice.GPU) -> BlockTable:
-        assert seq.is_executing()
-        return self.block_tables[seq.seq_id][device]
-    
     def _free_device_blocks(self, seq_id: str, device: BlockDevice) -> None:
         block_table = self.block_tables[seq_id][device]
         for block in set(block_table):
@@ -142,68 +138,76 @@ class BaseBlockSpaceManager(ABC):
         for device in devices:
             self._free_device_blocks(seq_id, device)
 
-    def free(self, seq: Sequence) -> None:
-        self._free_block_table(seq.seq_id)
-        del self.block_tables[seq.seq_id]
+    def free(self, seq_id: str) -> None:
+        self._free_block_table(seq_id)
+        del self.block_tables[seq_id]
 
     def reset(self) -> None:
         for seq_id in self.block_tables.keys():
             self._free_block_table(seq_id)
         self.block_tables.clear()
     
-    def get_gpu_block_table(self, seq: Sequence) -> List[int]:
-        block_table = self.block_tables[seq.seq_id][BlockDevice.GPU]
+    def get_gpu_block_table(self, seq_id: str) -> List[int]:
+        block_table = self.block_tables[seq_id][BlockDevice.GPU]
         return [block.block_number for block in block_table]  # TODO: make into generator instead?
 
-    def is_allocated_in_gpu(self, seq: Sequence) -> bool:
-        return seq.seq_id in self.block_tables and BlockDevice.GPU in self.block_tables[seq.seq_id]
+    def is_allocated_in_gpu(self, seq_id: str) -> bool:
+        return seq_id in self.block_tables and BlockDevice.GPU in self.block_tables[seq_id]
     
-    def is_allocated_in_cpu(self, seq: Sequence) -> bool:
-        return seq.seq_id in self.block_tables and BlockDevice.CPU in self.block_tables[seq.seq_id]
+    def is_allocated_in_cpu(self, seq_id: str) -> bool:
+        return seq_id in self.block_tables and BlockDevice.CPU in self.block_tables[seq_id]
     
-    def can_swap_in(self, seq: Sequence) -> bool:
-        assert seq.seq_id in self.block_tables
-        assert BlockDevice.GPU not in self.block_tables[seq.seq_id] and BlockDevice.CPU in self.block_tables[seq.seq_id]
+    def can_swap_in(self, seq_id: str) -> bool:
+        assert seq_id in self.block_tables
+        assert BlockDevice.GPU not in self.block_tables[seq_id] and BlockDevice.CPU in self.block_tables[seq_id]
 
         num_free_blocks = self.allocators[BlockDevice.GPU].get_num_free_blocks()
-        num_required_blocks = len(self.block_tables[seq.seq_id][BlockDevice.CPU])
+        num_required_blocks = len(self.block_tables[seq_id][BlockDevice.CPU])
         return num_free_blocks - num_required_blocks >= self.watermark_blocks
+    
+    def begin_swap_in(self, seq_id: str):
+        assert self.can_swap_in(seq_id)
 
-    def swap_in(self, seq: Sequence) -> None:
-        assert self.can_swap_in(seq)
+        self.block_tables[seq_id][BlockDevice.GPU] = []
+        swap_in_mapping = []
 
-        self.block_tables[seq.seq_id][BlockDevice.GPU] = []
-
-        for cpu_block in self.block_tables[seq.seq_id][BlockDevice.CPU]:
+        for cpu_block in self.block_tables[seq_id][BlockDevice.CPU]:
             gpu_block = self.allocators[BlockDevice.GPU].allocate()
-            self.swap_in_mapping.append((cpu_block.block_number, gpu_block.block_number))
-            self.block_tables[seq.seq_id][BlockDevice.GPU].append(gpu_block)
+            swap_in_mapping.append((cpu_block.block_number, gpu_block.block_number))
+            self.block_tables[seq_id][BlockDevice.GPU].append(gpu_block)
+        
+        self.swap_in_mapping[seq_id] = swap_in_mapping
+        
+    def finish_swap_in(self, seq_id: str):
+        self._free_device_blocks(seq_id, BlockDevice.CPU)
 
-        self._free_device_blocks(seq.seq_id, BlockDevice.CPU)
 
-    def can_swap_out(self, seq: Sequence) -> bool:
-        assert seq.seq_id in self.block_tables
-        assert BlockDevice.CPU not in self.block_tables[seq.seq_id] and BlockDevice.GPU in self.block_tables[seq.seq_id]
+    def can_swap_out(self, seq_id: str) -> bool:
+        assert seq_id in self.block_tables
+        assert BlockDevice.CPU not in self.block_tables[seq_id] and BlockDevice.GPU in self.block_tables[seq_id]
 
         num_free_blocks = self.allocators[BlockDevice.CPU].get_num_free_blocks()
-        num_required_blocks = len(self.block_tables[seq.seq_id][BlockDevice.GPU])
+        num_required_blocks = len(self.block_tables[seq_id][BlockDevice.GPU])
         return num_free_blocks - num_required_blocks >= 0  # NOTE: We don't use watermark for CPU
     
-    def swap_out(self, seq: Sequence) -> None:
-        assert self.can_swap_out(seq)
+    def begin_swap_out(self, seq_id: str):
+        assert self.can_swap_out(seq_id)
 
-        self.block_tables[seq.seq_id][BlockDevice.CPU] = []
+        self.block_tables[seq_id][BlockDevice.CPU] = []
+        swap_out_mapping = []
 
-        for gpu_block in self.block_tables[seq.seq_id][BlockDevice.GPU]:
+        for gpu_block in self.block_tables[seq_id][BlockDevice.GPU]:
             cpu_block = self.allocators[BlockDevice.CPU].allocate()
-            self.swap_out_mapping.append((gpu_block.block_number, cpu_block.block_number))
-            self.block_tables[seq.seq_id][BlockDevice.CPU].append(cpu_block)
-
-        self._free_device_blocks(seq.seq_id, BlockDevice.GPU)
+            swap_out_mapping.append((gpu_block.block_number, cpu_block.block_number))
+            self.block_tables[seq_id][BlockDevice.CPU].append(cpu_block)
+        
+        self.swap_out_mapping[seq_id] = swap_out_mapping
     
-    def get_and_clear_swap_mappings(self) -> Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]:
-        swap_in_mapping = self.swap_in_mapping
-        swap_out_mapping = self.swap_out_mapping
-        self.swap_in_mapping = []
-        self.swap_out_mapping = []
-        return swap_in_mapping, swap_out_mapping
+    def finish_swap_out(self, seq_id: str):
+        self._free_device_blocks(seq_id, BlockDevice.GPU)
+
+    def get_swap_in_mapping(self, seq_id: str) -> List[int]:
+        return self.swap_in_mapping[seq_id]
+    
+    def get_swap_out_mapping(self, seq_id: str) -> List[int]:
+        return self.swap_out_mapping[seq_id]

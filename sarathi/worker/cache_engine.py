@@ -1,6 +1,6 @@
 """CacheEngine class for managing the KV cache."""
 
-from typing import List, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 import torch
 
@@ -39,6 +39,9 @@ class CacheEngine:
         self.gpu_cache = self._allocate_kv_cache(self.num_gpu_blocks, "cuda")
         self.cpu_cache = self._allocate_kv_cache(self.num_cpu_blocks, "cpu")
 
+        self.finish_swap_out_events = {}
+        self.finish_swap_in_events = {}
+
     def _allocate_kv_cache(
         self,
         num_blocks: int,
@@ -56,26 +59,57 @@ class CacheEngine:
                     device=device)
                 )
         return kv_cache
+    
+    def _begin_swap(self, swap_mapping: Dict[str, List[Tuple[int, int]]], swap_in: bool) -> None:
+        for seq_id, src_to_dst in swap_mapping.items():
+            src_to_dst = torch.tensor(src_to_dst, dtype=torch.int64, device="cpu")
+            stream = torch.cuda.Stream()
+            with torch.cuda.stream(stream):
+                finish_event = torch.cuda.Event()
+                for i in range(self.num_layers):
+                    if swap_in:
+                        get_attention_wrapper().swap_blocks(self.cpu_cache[i], self.gpu_cache[i],
+                                                    src_to_dst)
+                    else:
+                        get_attention_wrapper().swap_blocks(self.gpu_cache[i], self.cpu_cache[i],
+                                                    src_to_dst)
+                finish_event.record()
+            if swap_in:
+                self.finish_swap_in_events[seq_id] = finish_event
+            else:
+                self.finish_swap_out_events[seq_id] = finish_event
 
-    def swap_in(self, src_to_dst: List[Tuple[int, int]]) -> None:
-        src_to_dst = torch.tensor(src_to_dst, dtype=torch.int64, device="cpu")
-        for i in range(self.num_layers):
-            get_attention_wrapper().swap_blocks(self.cpu_cache[i], self.gpu_cache[i],
-                                          src_to_dst)
-        # torch.cuda.synchronize()
-        # for i in range(self.num_layers):
-        #     for j in range(len(src_to_dst)):
-        #         assert (self.cpu_cache[i][src_to_dst[j][0]] == self.gpu_cache[i][src_to_dst[j][1]].to("cpu", copy=True)).all()
+    def begin_swap_in(self, swap_mapping: Dict[str, List[Tuple[int, int]]]) -> None:
+        self._begin_swap(swap_mapping, swap_in=True)
 
-    def swap_out(self, src_to_dst: List[Tuple[int, int]]) -> None:
-        src_to_dst = torch.tensor(src_to_dst, dtype=torch.int64, device="cpu")
-        for i in range(self.num_layers):
-            get_attention_wrapper().swap_blocks(self.gpu_cache[i], self.cpu_cache[i],
-                                          src_to_dst)
-        # torch.cuda.synchronize()
-        # for i in range(self.num_layers):
-        #     for j in range(len(src_to_dst)):
-        #         assert (self.gpu_cache[i][src_to_dst[j][0]].to("cpu", copy=True) == self.cpu_cache[i][src_to_dst[j][1]]).all()
+    def begin_swap_out(self, src_to_dst: List[Tuple[int, int]]) -> torch.cuda.Event:
+        self._begin_swap(src_to_dst, swap_in=False)
+
+    def pop_finished(self) -> Tuple[List[str], List[str]]:
+        finished_swap_in_seq_ids = []
+        finished_swap_out_seq_ids = []
+        logger.debug(f"Swap in events: {list(self.finish_swap_in_events.items())}")
+        logger.debug(f"Swap out events: {list(self.finish_swap_out_events.items())}")
+
+        for seq_id, event in self.finish_swap_in_events.items():
+            if event.query():
+                finished_swap_in_seq_ids.append(seq_id)
+            else:
+                logger.debug(f"Event for swap in {seq_id} not done")
+        
+        for seq_id in finished_swap_in_seq_ids:
+            del self.finish_swap_in_events[seq_id]
+
+        for seq_id, event in self.finish_swap_out_events.items():
+            if event.query():
+                finished_swap_out_seq_ids.append(seq_id)
+            else:
+                logger.debug(f"Event for swap out {seq_id} not done")
+        
+        for seq_id in finished_swap_out_seq_ids:
+            del self.finish_swap_out_events[seq_id]
+        
+        return finished_swap_in_seq_ids, finished_swap_out_seq_ids
 
     @staticmethod
     def get_cache_block_size(

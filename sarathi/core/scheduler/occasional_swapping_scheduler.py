@@ -1,3 +1,4 @@
+import logging
 import time
 from typing import List
 
@@ -54,6 +55,7 @@ class OccasionalSwappingScheduler(BaseScheduler):
         now = time.monotonic()
 
         seq_ids_to_swap_out: List[str] = []
+        seq_ids_to_swap_in: List[str] = []
         scheduled_seq_metadata_list: List[SequenceScheduleMetadata] = []
 
         num_batched_tokens: int = 0
@@ -65,6 +67,11 @@ class OccasionalSwappingScheduler(BaseScheduler):
 
         running_prefills: List[Sequence] = []
         running_decodes: List[Sequence] = []
+
+        while self.swapped_in:
+            seq = self.swapped_in.popitem()[1]
+            self.running.insert(0, seq)
+            logger.debug(f"(Iteration: {self._iteration_id}) Moving swapped in request {seq.seq_id} to beginning of running list")
 
         # This is different from the other schedulers. We *clear* the entire running list, and we don't need to assign a local version at the end
         while self.running:
@@ -78,7 +85,7 @@ class OccasionalSwappingScheduler(BaseScheduler):
         logger.debug(f"(Iteration: {self._iteration_id}) Waiting queue: {[seq.seq_id for seq in self.waiting]}")
         logger.debug(f"(Iteration: {self._iteration_id}) Running requests that need prefill: {[seq.seq_id for seq in running_prefills]}")
         logger.debug(f"(Iteration: {self._iteration_id}) Running requests that need decode: {[seq.seq_id for seq in running_decodes]}")
-        
+
         # Schedule waiting and running prefills first
         if self.waiting or running_prefills:
             logger.debug(f"(Iteration: {self._iteration_id}) Scheduling new requests and running prefills")
@@ -136,32 +143,22 @@ class OccasionalSwappingScheduler(BaseScheduler):
                 self._first_decode_iteration = self._iteration_id
             logger.debug(f"(Iteration: {self._iteration_id}) Scheduling decodes only")
 
-            # Swap in every fourth iteration (starting from the first decode iteration)
-            if (self._iteration_id - self._first_decode_iteration) % 4 == 3:
-                logger.debug(f"(Iteration: {self._iteration_id}) Swapping in all requests...")
-                logger.debug(f"(Iteration: {self._iteration_id}) Requests to swap in: {[seq.seq_id for seq in self.swapped]}")
-                while self.swapped:
-                    seq = self.swapped.pop(-1)
-                    self._swap_in(seq)  # No need to call _allocate when we call this
-                    num_batched_tokens += 1
-                    self.running.append(seq)
-                    scheduled_seq_metadata_list.append(
-                        SequenceScheduleMetadata.from_sequence(seq)
-                    )
-                    logger.debug(f"(Iteration: {self._iteration_id} Swapped in {seq.seq_id} to running list!")
-            
-            if (self._iteration_id - self._first_decode_iteration) % 4 == 1:
-                logger.debug(f"(Iteration: {self._iteration_id}) Swapping out half of running decodes...")
-                assert len(self.swapped) == 0
-
+            if (self._iteration_id - self._first_decode_iteration) % 8 == 3:
+                # Swap in all swapped out requests
+                # Important: don't modify list while iterating
+                swapped_out_seq_ids = list(self.swapped_out.keys())
+                for seq_id in swapped_out_seq_ids:
+                    logger.debug(f"(Iteration: {self._iteration_id}) Swapping in {seq_id}!")
+                    seq_ids_to_swap_in.append(seq_id)
+                    self._begin_swap_in(self.swapped_out[seq_id])
+                
             # Schedule decodes
             for seq in running_decodes:
-                # Swap out every second iteration (starting from the first decode iteration)
-                if (self._iteration_id - self._first_decode_iteration) % 4 == 1 and len(self.swapped) < len(running_decodes) // 2:
-                    self.swapped.append(seq)
+                # Swap out every last iteration (starting from the first decode iteration)
+                if (self._iteration_id - self._first_decode_iteration) % 8 == 7 and (len(self.swapping_out) + len(self.swapped_out)) < len(running_decodes) // 2:
+                    self._begin_swap_out(seq)
                     seq_ids_to_swap_out.append(seq.seq_id)
-                    self._swap_out(seq)
-                    logger.debug(f"(Iteration: {self._iteration_id}) Swapped out {seq.seq_id}! {len(self.swapped)} out of {len(running_decodes) // 2} swapped out so far.")
+                    logger.debug(f"(Iteration: {self._iteration_id}) Swapped out {seq.seq_id}! {len(self.swapping_out)} sequences swapping, {len(self.swapped_out)} sequences swapped out")
                     continue
 
                 if len(self.running) >= self.scheduler_config.max_num_seqs:
@@ -180,6 +177,7 @@ class OccasionalSwappingScheduler(BaseScheduler):
             id=self._iteration_id,
             ignored_seq_ids=[],
             preempted_seq_ids=[],
-            swapped_seq_ids=seq_ids_to_swap_out,
+            begin_swap_in_seq_ids=seq_ids_to_swap_in,
+            begin_swap_out_seq_ids=seq_ids_to_swap_out,
             scheduled_seq_metadata_list=scheduled_seq_metadata_list,
         )

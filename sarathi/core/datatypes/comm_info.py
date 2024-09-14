@@ -9,3 +9,4 @@ class CommInfo:
         self.enqueue_socket_port = 10001
         self.output_socket_port = 10002
         self.microbatch_socket_port = 10003
+        self.notify_socket_port = 10004

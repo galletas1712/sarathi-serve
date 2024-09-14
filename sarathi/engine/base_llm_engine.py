@@ -118,6 +118,8 @@ class BaseLLMEngine:
         self.zmq_context = zmq.Context()
         self.enqueue_socket = self.zmq_context.socket(zmq.PUB)
         self.enqueue_socket.bind(f"tcp://*:{self.comm_info.enqueue_socket_port}")
+        self.notify_socket = self.zmq_context.socket(zmq.PULL)
+        self.notify_socket.bind(f"tcp://*:{self.comm_info.notify_socket_port}")
         self.output_socket = self.zmq_context.socket(zmq.PULL)
         self.output_socket.bind(f"tcp://*:{self.comm_info.output_socket_port}")
 
@@ -371,13 +373,25 @@ class BaseLLMEngine:
         """
         start_time = time.perf_counter()
 
+        finished_swap_in_seq_ids, finished_swap_out_seq_ids = self.notify_socket.recv_pyobj()
+
+        if finished_swap_in_seq_ids:
+            logger.debug(f"Engine received finished swap in seq ids: {finished_swap_in_seq_ids}")
+        if finished_swap_out_seq_ids:
+            logger.debug(f"Engine received finished swap out seq ids: {finished_swap_out_seq_ids}")
+
+        self.scheduler.mark_finished(finished_swap_in_seq_ids, finished_swap_out_seq_ids)
+        self.seq_manager.mark_finished(finished_swap_in_seq_ids, finished_swap_out_seq_ids)
+
         with self._scheduler_timer:
             scheduler_outputs = self.scheduler.schedule()
 
         if scheduler_outputs.is_empty():
+            # Need to send to worker because it's expecting something
+            self.enqueue_socket.send_pyobj(None)
             return []
 
-        logger.debug("Engine scheduler outputs:", scheduler_outputs)
+        logger.debug(f"Engine scheduler outputs: {scheduler_outputs}")
 
         ignored_seqs, seq_metadata_list = self.seq_manager.on_schedule(
             scheduler_outputs
@@ -390,6 +404,9 @@ class BaseLLMEngine:
             )
         )
         sampler_outputs = self.output_socket.recv_pyobj()
+
+        if sampler_outputs is None:
+            return []
 
         return self._on_step_completed(
             scheduler_outputs,

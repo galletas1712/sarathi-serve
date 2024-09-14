@@ -84,6 +84,10 @@ class BaseWorker:
             f"tcp://{self.comm_info.engine_ip_address}:{self.comm_info.enqueue_socket_port}"
         )
         self.enqueue_socket.setsockopt_string(zmq.SUBSCRIBE, "")
+        self.notify_socket = self.zmq_context.socket(zmq.PUSH)
+        self.notify_socket.connect(
+            f"tcp://{self.comm_info.engine_ip_address}:{self.comm_info.notify_socket_port}"
+        )
         self.output_socket = self.zmq_context.socket(zmq.PUSH)
         self.output_socket.connect(
             f"tcp://{self.comm_info.engine_ip_address}:{self.comm_info.output_socket_port}"
@@ -183,26 +187,27 @@ class BaseWorker:
 
         logger.debug("Scheduler outputs:", scheduler_outputs)
 
+        # NOTE: on_schedule will set up block tables correspondingly
         _, seq_metadata_list = self.seq_manager.on_schedule(scheduler_outputs)
 
-        for seq_metadata in seq_metadata_list:
-            logger.debug(seq_metadata.seq.seq_id, seq_metadata.block_table)
+        # NOTE: Ordering of which ones are swapped out first
+        swap_out_mappings = self.seq_manager.get_swap_out_mappings(scheduler_outputs.begin_swap_out_seq_ids)
+        swap_in_mappings = self.seq_manager.get_swap_in_mappings(scheduler_outputs.begin_swap_in_seq_ids)
+        self.cache_engine.begin_swap_out(swap_out_mappings)
+        self.cache_engine.begin_swap_in(swap_in_mappings)
 
-        swap_in_mapping, swap_out_mapping = self.seq_manager.get_and_clear_swap_mappings()
-
-        self.cache_engine.swap_out(swap_out_mapping)
-        torch.cuda.synchronize()  # Make sure all swap outs are done before swap ins
-        self.cache_engine.swap_in(swap_in_mapping)
-        torch.cuda.synchronize()
-
-        sampler_outputs = self.model_runner.run(
-            seq_metadata_list,
-            self.cache_engine.gpu_cache,
-        )
+        if seq_metadata_list:
+            assert not scheduler_outputs.is_empty()  # Superset
+            sampler_outputs = self.model_runner.run(
+                seq_metadata_list,
+                self.cache_engine.gpu_cache,
+            )
+        else:
+            sampler_outputs = []
 
         self.on_step_completed(scheduler_outputs, sampler_outputs)
 
-        torch.cuda.synchronize()
+        torch.cuda.current_stream().synchronize()
 
         batch_stage_end_time = time.monotonic()
 
@@ -223,8 +228,23 @@ class BaseWorker:
 
         self.worker_ready_event.set()
 
+        iteration = 0
+
         while True:
+            logger.debug(f"Iteration: {iteration}")
+            finished_swap_in_seq_ids, finished_swap_out_seq_ids = self.cache_engine.pop_finished()
+            if finished_swap_in_seq_ids:
+                logger.debug(f"Iteration {iteration}: WORKER SAID FINISHED SWAPPING IN {finished_swap_in_seq_ids}")
+            if finished_swap_out_seq_ids:
+                logger.debug(f"Iteration {iteration}: WORKER SAID FINISHED SWAPPING OUT {finished_swap_out_seq_ids}")
+            self.seq_manager.mark_finished(finished_swap_in_seq_ids, finished_swap_out_seq_ids)
+            self.notify_socket.send_pyobj((finished_swap_in_seq_ids, finished_swap_out_seq_ids))
+
             step_inputs = self.enqueue_socket.recv_pyobj()
+
+            if step_inputs is None:
+                iteration += 1
+                continue
 
             for new_seq in step_inputs.new_seqs:
                 self.seq_manager.add_seq(new_seq)
@@ -232,9 +252,11 @@ class BaseWorker:
             output = self.execute_model(step_inputs.scheduler_outputs)
 
             if not self.is_tensor_parallel_rank_zero:
+                iteration += 1
                 continue
 
             self.output_socket.send_pyobj(output)
+            iteration += 1
 
     @synchronized
     def get_metrics_store(self) -> MetricsStore:

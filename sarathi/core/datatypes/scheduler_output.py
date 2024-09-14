@@ -10,15 +10,17 @@ class SchedulerOutputs:
         id: int,
         ignored_seq_ids: List[str],
         preempted_seq_ids: List[str],
-        swapped_seq_ids: List[str],
+        begin_swap_out_seq_ids: List[str],
+        begin_swap_in_seq_ids: List[str],
         scheduled_seq_metadata_list: List[SequenceScheduleMetadata],
     ) -> None:
         self.id = id
         self.ignored_seq_ids = ignored_seq_ids
         self.preempted_seq_ids = preempted_seq_ids
-        self.swapped_seq_ids = swapped_seq_ids
+        self.begin_swap_out_seq_ids = begin_swap_out_seq_ids
+        self.begin_swap_in_seq_ids = begin_swap_in_seq_ids
         self.scheduled_seq_metadata_list = sorted(
-            scheduled_seq_metadata_list, key=lambda x: not x.is_prompt
+            scheduled_seq_metadata_list, key=lambda x: not x.is_prompt  # NOTE: This is sorting decodes at the beginning
         )
         self.prompt_chunk_lens = [
             metadata.num_prompt_tokens for metadata in scheduled_seq_metadata_list
@@ -32,16 +34,13 @@ class SchedulerOutputs:
         )
 
     def is_empty(self) -> bool:
-        # NOTE: We do not consider the ignored sequence groups.
-        return not self.scheduled_seq_metadata_list
+        # Used to check if we should run execute_model at all (but that includes cache swapping)
+        # NOTE: pipeline_parallel_engine has a different definition and this is invalid
+        return not self.scheduled_seq_metadata_list and not self.begin_swap_in_seq_ids and not self.begin_swap_out_seq_ids
 
     def has_no_output(self) -> bool:
-        return (
-            not self.scheduled_seq_metadata_list
-            and not self.ignored_seq_ids
-            and not self.preempted_seq_ids
-            and not self.swapped_seq_ids
-        )
+        # NOTE: same deal with pipeline_parallel_engine
+        return not self.scheduled_seq_metadata_list
 
     @property
     def seq_ids(self) -> List[str]:
@@ -52,6 +51,7 @@ class SchedulerOutputs:
             f"SchedulerOutputs(id={self.id}, "
             f"ignored_seq_ids={self.ignored_seq_ids}, "
             f"preempted_seq_ids={self.preempted_seq_ids}, "
-            f"swapped_seq_ids={self.swapped_seq_ids}, "
+            f"begin_swap_out_seq_ids={self.begin_swap_out_seq_ids}, "
+            f"begin_swap_in_seq_ids={self.begin_swap_in_seq_ids}, "
             f"scheduled_seq_metadata_list={self.scheduled_seq_metadata_list})"
         )

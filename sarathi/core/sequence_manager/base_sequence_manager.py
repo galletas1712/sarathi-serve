@@ -37,11 +37,29 @@ class BaseSequenceManager(ABC):
         assert seq.is_executing()
         seq.reset_for_recompute()
 
-    def _swap_seq(self, seq_id: str) -> None:
+    def _begin_swap_out_seq(self, seq_id: str) -> None:
         assert seq_id in self.seq_map
         seq = self.seq_map[seq_id]
         assert seq.is_executing(), f"seq_id: {seq_id}, status: {seq.get_status()}"
-        seq.set_status(SequenceStatus.SWAPPED)
+        seq.set_status(SequenceStatus.SWAPPING_OUT)
+    
+    def _finish_swap_out_seq(self, seq_id: str) -> None:
+        assert seq_id in self.seq_map
+        seq = self.seq_map[seq_id]
+        assert seq.is_swapping_out(), f"seq_id: {seq_id}, status: {seq.get_status()}"
+        seq.set_status(SequenceStatus.SWAPPED_OUT)
+    
+    def _begin_swap_in_seq(self, seq_id: str) -> None:
+        assert seq_id in self.seq_map
+        seq = self.seq_map[seq_id]
+        assert seq.is_swapped_out(), f"seq_id: {seq_id}, status: {seq.get_status()}"
+        seq.set_status(SequenceStatus.SWAPPING_IN)
+    
+    def _finish_swap_in_seq(self, seq_id: str) -> None:
+        assert seq_id in self.seq_map
+        seq = self.seq_map[seq_id]
+        assert seq.is_swapping_in(), f"seq_id: {seq_id}, status: {seq.get_status()}"
+        seq.set_status(SequenceStatus.PAUSED)
 
     def _pause_seq(self, seq_id: str) -> None:
         assert seq_id in self.seq_map
@@ -52,7 +70,7 @@ class BaseSequenceManager(ABC):
     def _resume_seq(self, seq_id: str) -> None:
         assert seq_id in self.seq_map
         seq = self.seq_map[seq_id]
-        assert seq.is_waiting() or seq.is_paused() or seq.is_swapped(), f"seq_id: {seq_id}, status: {seq.get_status()}"
+        assert seq.is_waiting() or seq.is_paused(), f"seq_id: {seq_id}, status: {seq.get_status()}"
         seq.set_status(SequenceStatus.RUNNING)
 
     def _on_seq_scheduled(self, seq_sched_metadata: SequenceScheduleMetadata) -> None:
@@ -60,7 +78,11 @@ class BaseSequenceManager(ABC):
         self._resume_seq(seq_sched_metadata.seq_id)
 
     @abstractmethod
-    def _get_gpu_block_table(self, seq: Sequence) -> List[int]:
+    def get_gpu_block_table(self, seq: Sequence) -> List[int]:
+        pass
+
+    @abstractmethod
+    def get_cpu_block_table(self, seq: Sequence) -> List[int]:
         pass
 
     @synchronized
@@ -78,26 +100,25 @@ class BaseSequenceManager(ABC):
         for seq_id in scheduler_outputs.preempted_seq_ids:
             self._preempt_seq(seq_id)
         
-        # NOTE: DANGER! Be very wary that what we're doing is updating the block tables for swap out first in _swap_seq,
-        # then updating the swap in block tables in self._on_seq_scheduled. This means we *have* to do all swap outs first,
-        # then all swap ins.
-        for seq_id in scheduler_outputs.swapped_seq_ids:
-            self._swap_seq(seq_id)
+        for seq_id in scheduler_outputs.begin_swap_out_seq_ids:
+            self._begin_swap_out_seq(seq_id)
         
-        seq_metadata_list: List[SequenceMetadata] = []
-
+        for seq_id in scheduler_outputs.begin_swap_in_seq_ids:
+            self._begin_swap_in_seq(seq_id)
+        
+        scheduled_seq_metadata_list: List[SequenceMetadata] = []
         for seq_sched_metadata in scheduler_outputs.scheduled_seq_metadata_list:
-            self._on_seq_scheduled(seq_sched_metadata)
+            self._on_seq_scheduled(seq_sched_metadata)  # This will call _resume_seq inside
             seq = self.seq_map[seq_sched_metadata.seq_id]
-            seq_metadata_list.append(
+            scheduled_seq_metadata_list.append(
                 SequenceMetadata(
                     seq,
-                    self._get_gpu_block_table(seq),
+                    self.get_gpu_block_table(seq.seq_id),
                     seq_sched_metadata.num_prompt_tokens,
                 )
             )
-
-        return ignored_seqs, seq_metadata_list
+        
+        return ignored_seqs, scheduled_seq_metadata_list
 
     @abstractmethod
     def _on_append_token(self, seq: Sequence) -> None:
@@ -134,7 +155,7 @@ class BaseSequenceManager(ABC):
         ):
             assert scheduled_seq_metadata.seq_id == sampler_output.seq_id
             seq = self.seq_map[scheduled_seq_metadata.seq_id]
-            if seq.is_waiting() or seq.is_swapped():
+            if seq.is_waiting() or seq.is_swapped_out():
                 # seq is preempted
                 # this can happen with pipeline parallel -- if the system
                 # runs out of memory, it will preempt the last arrived request
@@ -164,3 +185,10 @@ class BaseSequenceManager(ABC):
     ) -> List[RequestOutput]:
         all_seqs = ignored_seqs + [x.seq for x in seq_metadata_list]
         return [RequestOutput.from_seq(seq) for seq in all_seqs]
+
+    def mark_finished(self, finished_swap_in_seq_ids: List[str], finished_swap_out_seq_ids: List[str]) -> None:
+        for seq_id in finished_swap_in_seq_ids:
+            self._finish_swap_in_seq(seq_id)
+        
+        for seq_id in finished_swap_out_seq_ids:
+            self._finish_swap_out_seq(seq_id)
