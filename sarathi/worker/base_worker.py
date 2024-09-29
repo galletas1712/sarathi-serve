@@ -4,6 +4,7 @@ import os
 import time
 from threading import Event, Thread
 from typing import Optional, Tuple
+from pathlib import Path
 
 import torch
 import torch.distributed
@@ -182,7 +183,7 @@ class BaseWorker:
         self,
         scheduler_outputs: SchedulerOutputs,
     ) -> Optional[SamplerOutputs]:
-        torch.cuda.synchronize()
+        torch.cuda.current_stream().synchronize()
         batch_stage_start_time = time.monotonic()
 
         logger.debug("Scheduler outputs:", scheduler_outputs)
@@ -293,9 +294,9 @@ class BaseWorker:
     @synchronized
     def stop_profiling(self) -> None:
         self.profiler.__exit__(None, None, None)
-        self.profiler.export_chrome_trace(
-            f"{self.config.replica_config.output_dir}/profiler_trace_rank_{self.rank}.json"
-        )
+        trace_path = Path(f"{self.config.replica_config.output_dir}/profiler_trace_rank_{self.rank}.json")
+        trace_path.parent.mkdir(parents=True, exist_ok=True)
+        self.profiler.export_chrome_trace(str(trace_path))
     
 
 def _init_distributed_environment(

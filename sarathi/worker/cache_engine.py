@@ -42,6 +42,9 @@ class CacheEngine:
         self.finish_swap_out_events = {}
         self.finish_swap_in_events = {}
 
+        self.swap_out_stream = torch.cuda.Stream()
+        self.swap_in_stream = torch.cuda.Stream()
+
     def _allocate_kv_cache(
         self,
         num_blocks: int,
@@ -63,27 +66,27 @@ class CacheEngine:
     def _begin_swap(self, swap_mapping: Dict[str, List[Tuple[int, int]]], swap_in: bool) -> None:
         for seq_id, src_to_dst in swap_mapping.items():
             src_to_dst = torch.tensor(src_to_dst, dtype=torch.int64, device="cpu")
-            stream = torch.cuda.Stream()
-            with torch.cuda.stream(stream):
-                finish_event = torch.cuda.Event()
-                for i in range(self.num_layers):
-                    if swap_in:
-                        get_attention_wrapper().swap_blocks(self.cpu_cache[i], self.gpu_cache[i],
-                                                    src_to_dst)
-                    else:
-                        get_attention_wrapper().swap_blocks(self.gpu_cache[i], self.cpu_cache[i],
-                                                    src_to_dst)
-                finish_event.record()
+            finish_event = torch.cuda.Event()
+            for i in range(self.num_layers):
+                if swap_in:
+                    get_attention_wrapper().swap_blocks(self.cpu_cache[i], self.gpu_cache[i],
+                                                src_to_dst)
+                else:
+                    get_attention_wrapper().swap_blocks(self.gpu_cache[i], self.cpu_cache[i],
+                                                src_to_dst)
+            finish_event.record()
             if swap_in:
                 self.finish_swap_in_events[seq_id] = finish_event
             else:
                 self.finish_swap_out_events[seq_id] = finish_event
 
     def begin_swap_in(self, swap_mapping: Dict[str, List[Tuple[int, int]]]) -> None:
-        self._begin_swap(swap_mapping, swap_in=True)
+        with torch.cuda.stream(self.swap_in_stream):
+            self._begin_swap(swap_mapping, swap_in=True)
 
     def begin_swap_out(self, src_to_dst: List[Tuple[int, int]]) -> torch.cuda.Event:
-        self._begin_swap(src_to_dst, swap_in=False)
+        with torch.cuda.stream(self.swap_out_stream):
+            self._begin_swap(src_to_dst, swap_in=False)
 
     def pop_finished(self) -> Tuple[List[str], List[str]]:
         finished_swap_in_seq_ids = []
