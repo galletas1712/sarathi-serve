@@ -35,3 +35,4 @@ BlockSpaceManagerRegistry.register(
 )
 BlockSpaceManagerRegistry.register(SchedulerType.ROLLING_PREEMPTION_PROFILING, SarathiBlockSpaceManager)
 BlockSpaceManagerRegistry.register(SchedulerType.OCCASIONAL_SWAPPING, SarathiBlockSpaceManager)
+BlockSpaceManagerRegistry.register(SchedulerType.FCFS_DISAGG_EMULATION, SarathiBlockSpaceManager)

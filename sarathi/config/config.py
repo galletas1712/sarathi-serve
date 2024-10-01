@@ -282,6 +282,20 @@ class SarathiSchedulerConfig(BaseSchedulerConfig):
 
 
 @dataclass
+class FCFSDisaggEmulationSchedulerConfig(BaseSchedulerConfig):
+    chunk_size: int = field(
+        default=512, metadata={"help": "Size of each chunk for FCFS disagg emulation scheduler."}
+    )
+
+    def get_max_num_batched_tokens(self, max_model_len: int):
+        return self.chunk_size
+    
+    @staticmethod
+    def get_type():
+        return SchedulerType.FCFS_DISAGG_EMULATION
+
+
+@dataclass
 class RollingPreemptionProfilingSchedulerConfig(BaseSchedulerConfig):
     max_num_seqs: int = 8
     chunk_size: int = 512
