@@ -57,6 +57,7 @@ class BaseScheduler(ABC):
         self.swapped_out: Dict[str, Sequence] = {}
         self.swapping_in: Dict[str, Sequence] = {}
         self.swapped_in: Dict[str, Sequence] = {}
+        # NOTE: We have a separate self.swapped_in queue because the scheduler needds to decide where to put recently swapped in sequences in the running list
 
     def reset_state(self) -> None:
         self._iteration_id = -1

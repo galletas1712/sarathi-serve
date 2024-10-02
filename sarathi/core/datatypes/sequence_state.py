@@ -1,8 +1,11 @@
 import time
-from typing import Optional
+from typing import List, Optional
 
 from sarathi.core.datatypes.sequence_status import SequenceStatus
 
+# NOTE: Right now self._preempted time will still count time spent waiting in PAUSED state while prefills are running under disagg_emulation
+# NOTE: e2e time also needs to be adjusted
+# NOTE: Look at metrics_store to see how everything is actually being logged
 
 class SequenceState:
 
@@ -12,11 +15,23 @@ class SequenceState:
         self._num_prompt_tokens: int = num_prompt_tokens
         self._num_output_tokens: int = 0
         self._status = SequenceStatus.WAITING
+
         self._is_scheduled: bool = False
         self._is_completed: bool = False
         self._scheduled_at: Optional[float] = None
         self._completed_at: Optional[float] = None
         self._prompt_processing_completed_at: Optional[float] = None
+
+        self._last_swap_out_start_at: Optional[float] = None
+        self._last_swap_out_finished_at: Optional[float] = None
+        self._last_swap_in_start_at: Optional[float] = None
+        self._last_swap_in_finished_at: Optional[float] = None
+        self._time_between_swaps: List[float] = []
+        self._swap_out_delays: List[float] = []
+        self._swap_in_delays: List[float] = []
+        self._e2e_swapped_out_times: List[float] = []
+        self._idle_swapped_out_times: List[float] = []
+
         self._last_restart_at: Optional[float] = None
         self._last_pause_at: Optional[float] = None
         self._execution_time: float = 0.0
@@ -192,7 +207,7 @@ class SequenceState:
         return self._is_ignore_finished
 
     def _handle_transitions_from_waiting_status(
-        self, current_time: float, status: SequenceStatus
+        self, current_time: float, status: SequenceStatus, **kwargs
     ) -> None:
         if status == SequenceStatus.RUNNING:
             # request is starting execution now
@@ -219,7 +234,7 @@ class SequenceState:
             )
 
     def _handle_transitions_from_running_status(
-        self, current_time: float, status: SequenceStatus
+        self, current_time: float, status: SequenceStatus, **kwargs
     ) -> None:
         self._execution_time += current_time - self._last_execution_start_at
 
@@ -235,7 +250,7 @@ class SequenceState:
             )
 
     def _handle_transitions_from_paused_status(
-        self, current_time: float, status: SequenceStatus
+        self, current_time: float, status: SequenceStatus, **kwargs
     ) -> None:
         self._preempted_time += current_time - self._last_pause_at
 
@@ -247,47 +262,68 @@ class SequenceState:
             self._completed_at = current_time
         elif status == SequenceStatus.RUNNING:
             self._last_execution_start_at = current_time
-        elif status == SequenceStatus.WAITING or status == SequenceStatus.SWAPPING_OUT:
+        elif status == SequenceStatus.WAITING:
             self._num_restarts += 1
             self._last_restart_at = current_time
+        elif status == SequenceStatus.SWAPPING_OUT:
+            if self._last_swap_in_finished_at is not None:
+                self._time_between_swaps.append(current_time - self._last_swap_in_finished_at)
+            self._last_swap_out_start_at = current_time
         else:
             raise ValueError(
                 f"Invalid state transition from {self._status} to {status} for request {self._id}."
             )
 
-    # TODO: this is kind of invalid right now
-    def _handle_transitions_from_swapped_status(
-        self, current_time: float, status: SequenceStatus
+    def _handle_transitions_from_swapping_out_status(
+        self, current_time: float, status: SequenceStatus, **kwargs
     ) -> None:
-        self._preempted_time += current_time - self._last_pause_at
-
-        if status == SequenceStatus.RUNNING:
-            assert self._num_restarts > 0
-            self._preempted_time += current_time - self._last_restart_at
-        elif status == SequenceStatus.SWAPPING_IN:
-            # TODO: also something here
-            pass
+        if status == SequenceStatus.SWAPPED_OUT:
+            self._last_swap_out_finished_at = current_time
+            self._swap_out_delays.append(current_time - self._last_swap_out_start_at)
         else:
             raise ValueError(
                 f"Invalid state transition from {self._status} to {status} for request {self._id}."
             )
 
-    def set_status(self, status: SequenceStatus) -> None:
+    def _handle_transitions_from_swapped_status(
+        self, current_time: float, status: SequenceStatus, **kwargs
+    ) -> None:
+        if status == SequenceStatus.SWAPPING_IN:
+            # NOTE: Idle swapped out time might not mean much under disagg emulation
+            self._idle_swapped_out_times.append(current_time - self._last_swap_out_finished_at)
+            self._last_swap_in_start_at = current_time
+        else:
+            raise ValueError(
+                f"Invalid state transition from {self._status} to {status} for request {self._id}."
+            )
+    
+    def _handle_transitions_from_swapping_in_status(
+        self, current_time: float, status: SequenceStatus, **kwargs
+    ) -> None:
+        if status == SequenceStatus.PAUSED:
+            self._last_swap_in_finished_at = current_time
+            self._swap_in_delays.append(current_time - self._last_swap_in_start_at)
+            self._e2e_swapped_out_times.append(current_time - self._last_swap_out_start_at)
+        else:
+            raise ValueError(
+                f"Invalid state transition from {self._status} to {status} for request {self._id}."
+            )
+    
+    def set_status(self, status: SequenceStatus, **kwargs) -> None:
         current_time = time.monotonic()
 
         if self._status == SequenceStatus.WAITING:
-            self._handle_transitions_from_waiting_status(current_time, status)
+            self._handle_transitions_from_waiting_status(current_time, status, **kwargs)
         elif self._status == SequenceStatus.RUNNING:
-            self._handle_transitions_from_running_status(current_time, status)
+            self._handle_transitions_from_running_status(current_time, status, **kwargs)
         elif self._status == SequenceStatus.PAUSED:
-            self._handle_transitions_from_paused_status(current_time, status)
+            self._handle_transitions_from_paused_status(current_time, status, **kwargs)
         elif self._status == SequenceStatus.SWAPPED_OUT:
-            self._handle_transitions_from_swapped_status(current_time, status)
+            self._handle_transitions_from_swapped_status(current_time, status, **kwargs)
         elif self._status == SequenceStatus.SWAPPING_OUT:
-            pass
+            self._handle_transitions_from_swapping_out_status(current_time, status, **kwargs)
         elif self._status == SequenceStatus.SWAPPING_IN:
-            # TODO: deal with these later
-            pass
+            self._handle_transitions_from_swapping_in_status(current_time, status, **kwargs)
         else:
             raise ValueError(
                 f"Invalid state transition from {self._status} to {status} for request {self._id}."

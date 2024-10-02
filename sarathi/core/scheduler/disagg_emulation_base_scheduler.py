@@ -37,6 +37,12 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
         # Fix the current time.
         now = time.monotonic()
 
+        # Swapped in requests should be moved to the beginning of the running list
+        while self.swapped_in:
+            seq = self.swapped_in.popitem()[1]
+            self.running.insert(0, seq)
+            logger.debug(f"(Iteration: {self._iteration_id}) Moving swapped in request {seq.seq_id} to beginning of running list")
+
         # Get running prefills and running decodes
         running_prefills: List[Sequence] = []
         running_decodes: List[Sequence] = []
