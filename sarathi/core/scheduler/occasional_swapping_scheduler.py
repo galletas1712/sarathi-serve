@@ -93,7 +93,10 @@ class OccasionalSwappingScheduler(BaseScheduler):
             # Schedule waiting requests
             while self.waiting:
                 seq = self.waiting[0]
-                assert seq.arrival_time <= now
+
+                if seq.arrival_time > now:
+                    break
+
                 # Let's not even deal with requests that are too long
                 assert self._check_request_prompt_length(seq)
                 # Let's not even deal with requests that we can't allocate

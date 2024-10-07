@@ -59,16 +59,18 @@ class WorkerSequenceManager(BaseSequenceManager):
         assert seq_sched_metadata.seq_id in self.seq_map
         seq = self.seq_map[seq_sched_metadata.seq_id]
 
-        super()._on_seq_scheduled(seq_sched_metadata)  # This just sets the status to resumed
-        assert seq.is_running()
-
-        if seq_sched_metadata.is_prompt:
+        if seq.is_waiting():
             assert len(seq.prompt_token_ids) > 0 and len(seq.output_token_ids) == 0
             assert self.block_manager.can_allocate(seq, BlockDevice.GPU)
             self.block_manager.allocate(seq, BlockDevice.GPU)
-        else:
+        elif not seq_sched_metadata.is_prompt:
             self.block_manager.can_append_slot(BlockDevice.GPU)
             self.block_manager.append_slot(seq, BlockDevice.GPU)
+        
+        # NOTE: Here, we assume that in chunked prefill mode, the full sequence is allocated,
+        # which means in later chunks, we don't need to allocate. But when decoding, we do need to append slots.
+
+        super()._on_seq_scheduled(seq_sched_metadata)  # This just sets the status to resumed
 
     def _on_append_token(self, seq: Sequence) -> None:
         # the engine performs detokenization at this point

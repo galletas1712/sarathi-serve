@@ -52,11 +52,10 @@ class CacheEngine:
     ) -> List[torch.Tensor]:
         """Allocates KV cache on the specified device."""
         kv_cache: List[torch.Tensor] = []
-        num_blocks_per_layer = (num_blocks + self.num_layers - 1) // self.num_layers
         for _ in range(self.num_layers):
             kv_cache.append(
                 get_attention_wrapper().get_cache_block(
-                    num_blocks_per_layer,
+                    num_blocks,
                     dtype=self.dtype,
                     pin_memory=(device == "cpu"),
                     device=device)
