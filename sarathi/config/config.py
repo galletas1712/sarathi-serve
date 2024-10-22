@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Any, List, Optional
 
 from sarathi.config.base_poly_config import BasePolyConfig
 from sarathi.config.flat_dataclass import create_flat_dataclass
@@ -160,7 +160,7 @@ class CacheConfig:
         },
     )
     num_cpu_blocks: Optional[int] = field(
-        default=24088,
+        default=4096,  # TODO: change back to 24088, or actually match the GPU
         metadata={
             "help": "Number of CPU blocks for caching."
         },
@@ -282,17 +282,37 @@ class SarathiSchedulerConfig(BaseSchedulerConfig):
 
 
 @dataclass
-class FCFSDisaggEmulationSchedulerConfig(BaseSchedulerConfig):
+class DisaggEmulationSchedulerConfig(BaseSchedulerConfig):
     chunk_size: int = field(
-        default=512, metadata={"help": "Size of each chunk for FCFS disagg emulation scheduler."}
+        default=512, metadata={"help": "Size of each chunk for disagg emulation scheduler."}
     )
 
     def get_max_num_batched_tokens(self, max_model_len: int):
         return self.chunk_size
-    
+
+    @staticmethod
+    def get_type():
+        return SchedulerType.DISAGG_EMULATION
+
+@dataclass
+class FCFSDisaggEmulationSchedulerConfig(DisaggEmulationSchedulerConfig):
     @staticmethod
     def get_type():
         return SchedulerType.FCFS_DISAGG_EMULATION
+
+
+@dataclass
+class MLFQDisaggEmulationSchedulerConfig(DisaggEmulationSchedulerConfig):
+    quantums: List[int] = field(
+        default_factory=lambda: [32, 128, 512],  # TODO: add more quantums, but only test till 512 for now
+    )
+
+    def get_quantums(self):
+        return self.quantums
+    
+    @staticmethod
+    def get_type():
+        return SchedulerType.MLFQ_DISAGG_EMULATION
 
 
 @dataclass
@@ -419,7 +439,7 @@ class SystemConfig:
     cache_config: CacheConfig = field(default_factory=CacheConfig)
     parallel_config: ParallelConfig = field(default_factory=ParallelConfig)
     scheduler_config: BaseSchedulerConfig = field(
-        default_factory=SarathiSchedulerConfig
+        default_factory=FCFSDisaggEmulationSchedulerConfig
     )
     metrics_config: MetricsConfig = field(default_factory=MetricsConfig)
 
@@ -433,7 +453,7 @@ class BaseEndpointConfig(ABC):
     cache_config: CacheConfig = field(default_factory=CacheConfig)
     parallel_config: ParallelConfig = field(default_factory=ParallelConfig)
     scheduler_config: BaseSchedulerConfig = field(
-        default_factory=SarathiSchedulerConfig
+        default_factory=FCFSDisaggEmulationSchedulerConfig
     )
     metrics_config: MetricsConfig = field(default_factory=MetricsConfig)
 

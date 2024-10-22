@@ -8,7 +8,7 @@ from sarathi.config import (
     ParallelConfig,
     SarathiSchedulerConfig,
 )
-from sarathi.config.config import FCFSDisaggEmulationSchedulerConfig
+from sarathi.config.config import MLFQDisaggEmulationSchedulerConfig
 from sarathi.core.block_space_manager.base_block_space_manager import BlockDevice
 from sarathi.core.block_space_manager.sarathi_block_space_manager import (
     SarathiBlockSpaceManager,
@@ -22,17 +22,18 @@ from sarathi.logger import init_logger
 logger = init_logger(__name__)
 
 
-class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
+class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
 
     def __init__(
         self,
         model_config: ModelConfig,
-        scheduler_config: FCFSDisaggEmulationSchedulerConfig,
+        scheduler_config: MLFQDisaggEmulationSchedulerConfig,
         cache_config: CacheConfig,
         parallel_config: ParallelConfig,
     ) -> None:
         super().__init__(model_config, scheduler_config, cache_config, parallel_config)
-        self.policy = PolicyFactory.get_policy("fcfs")
+        self.policy = PolicyFactory.get_policy("mlfq")
+        self.quantums = scheduler_config.get_quantums()
 
     def _get_seq_next_num_prefill_tokens(
         self, seq: Sequence, num_batched_tokens: int
@@ -44,7 +45,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         )
 
         return next_num_tokens
-    
+
     def _schedule_prefills(self, running_prefills: List[Sequence], running_decodes: List[Sequence], now: float):
         running = [*running_decodes] # NOTE: running decodes, doesn't strictly have to come first in order
         ignored_seq_ids = []
@@ -129,7 +130,17 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             scheduled_seq_metadata_list
         )
 
-    def _schedule_decodes(self, running_decodes: List[Sequence], now: float):
+    def _get_quantum(self, num_running_iterations: int):
+        quantum_idx = 0
+        for i in range(len(self.quantums)):
+            if num_running_iterations > self.quantums[i]:
+                quantum_idx = i
+
+        quantum_idx = min(quantum_idx, len(self.quantums) - 1)
+        
+        return quantum_idx
+    
+    def _schedule_decodes(self, running_decodes: List[Sequence]):
         running = []
         begin_swap_in_seq_ids = []
         begin_swap_out_seq_ids = []
@@ -167,7 +178,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         
         # Swap in outstanding swapped out sequences if we have room
         # This assumes FCFS backpressure behavior in the base scheduler
-        swapped_out = self.policy.sort_by_priority(now, self.swapped_out.values())
+        swapped_out = list(sorted(self.swapped_out.values(), key=lambda x: x.arrival_time))
         while swapped_out:
             seq = swapped_out.pop(0)
 

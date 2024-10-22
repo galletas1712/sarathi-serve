@@ -99,11 +99,11 @@ class BenchmarkRunner:
             total=len(self.requests),
             desc=f"Replica {self.replica_id} processed requests",
         )
-        start_time = time.monotonic()
+        start_time = time.perf_counter()
 
         # Run the engine.
         while num_processed_requests < len(self.requests):
-            elapsed_time = time.monotonic() - start_time
+            elapsed_time = time.perf_counter() - start_time
             if elapsed_time > self.config.time_limit:
                 break
 
@@ -115,7 +115,7 @@ class BenchmarkRunner:
                     num_processed_requests += 1
                     pbar.update(1)
 
-        end_time = time.monotonic()
+        end_time = time.perf_counter()
         pbar.close()
 
         logger.info(
@@ -127,7 +127,7 @@ class BenchmarkRunner:
 
     def _add_requests(self) -> None:
         index = 0
-        first_request_time = time.monotonic()
+        first_request_time = time.perf_counter()
         while index < len(self.requests):
             request = self.requests[index]
             self.llm_engine.add_request(
@@ -242,22 +242,24 @@ class BenchmarkRunnerLauncher:
         return runners
 
     def _create_aggregate_metric_store(self):
-        replica_config = ReplicaConfig(
-            replica_id=0,  # dummy replica id
-            output_dir=self.config.output_dir,
-        )
-        metrics_store = MetricsStore.get_instance(
-            replica_config,
-            self.config.model_config,
-            self.config.metrics_config,
-        )
+        # TODO: support multiple replica
+        self.aggregate_metric_store = None
+        # replica_config = ReplicaConfig(
+        #     replica_id=0,  # dummy replica id
+        #     output_dir=self.config.output_dir,
+        # )
+        # metrics_store = MetricsStore.get_instance(
+        #     replica_config,
+        #     self.config.model_config,
+        #     self.config.metrics_config,
+        # )
 
-        if wandb.run is not None:
-            wandb.config.update(self.config.to_dict())
+        # if wandb.run is not None:
+        #     wandb.config.update(self.config.to_dict())
 
-        metrics_store.mark_initial_memory_profiling_done()
+        # metrics_store.mark_initial_memory_profiling_done()
 
-        return metrics_store
+        # return metrics_store
 
     def run(self):
         if self.is_multi_replica:

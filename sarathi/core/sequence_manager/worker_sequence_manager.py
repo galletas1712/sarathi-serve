@@ -30,8 +30,7 @@ class WorkerSequenceManager(BaseSequenceManager):
     def _free_seq(self, seq_id: str) -> None:
         # ignored sequences might not have been allocated
         assert seq_id in self.seq_map
-        seq = self.seq_map[seq_id]
-        if self.block_manager.is_allocated_in_gpu(seq) or self.block_manager.is_allocated_in_cpu(seq):
+        if self.block_manager.is_allocated_in_gpu(seq_id) or self.block_manager.is_allocated_in_cpu(seq_id):
             self.block_manager.free(seq_id)
         super()._free_seq(seq_id)
 
@@ -61,6 +60,7 @@ class WorkerSequenceManager(BaseSequenceManager):
 
         if seq.is_waiting():
             assert len(seq.prompt_token_ids) > 0 and len(seq.output_token_ids) == 0
+            # print(f"Trying to schedule {seq.seq_id}, free blocks: {self.block_manager.allocators[BlockDevice.GPU].get_num_free_blocks()}, required blocks: {len(seq.logical_token_blocks)}")
             assert self.block_manager.can_allocate(seq, BlockDevice.GPU)
             self.block_manager.allocate(seq, BlockDevice.GPU)
         elif not seq_sched_metadata.is_prompt:

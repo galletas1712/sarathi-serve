@@ -94,7 +94,6 @@ class Sequence:
 
         if self.prompt_tokens_processed == len(self.prompt_token_ids):
             self.prompt_processing_finished = True
-            self.state.on_prompt_processing_completed()
 
     def update_prompt_tokens_stage_processed(self, num_tokens: int) -> None:
         assert not self.prompt_processing_finished
@@ -115,7 +114,6 @@ class Sequence:
 
         self.output_token_ids.append(token_id)
         self._append_tokens_to_blocks([token_id])
-        self.state.on_token_generated()
 
     def get_len(self) -> int:
         return len(self.output_token_ids) + len(self.prompt_token_ids)

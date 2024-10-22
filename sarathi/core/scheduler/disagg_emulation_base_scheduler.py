@@ -37,11 +37,15 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
         # Fix the current time.
         now = time.monotonic()
 
-        # Swapped in requests should be moved to the beginning of the running list
+        # Swapped in requests should be moved to the running list
         while self.swapped_in:
             seq = self.swapped_in.popitem()[1]
-            self.running.insert(0, seq)
-            logger.debug(f"(Iteration: {self._iteration_id}) Moving swapped in request {seq.seq_id} to beginning of running list")
+            self.running.append(seq)
+            logger.debug(f"(Iteration: {self._iteration_id}) Moving swapped in request {seq.seq_id} into running list")
+        
+        # Sort both waiting and running queues
+        self.running = self.policy.sort_by_priority(now, self.running)
+        self.waiting = self.policy.sort_by_priority(now, self.waiting)
 
         # Get running prefills and running decodes
         running_prefills: List[Sequence] = []
@@ -54,17 +58,8 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
             else:
                 running_decodes.append(seq)
 
-        # Look for sequences to prefill
-        waiting_prefill_available = False
-        for seq in self.waiting:
-            if (
-                seq.arrival_time <= now and
-                self._check_request_prompt_length(seq) and
-                self.block_manager.can_allocate(seq)
-            ):
-                waiting_prefill_available = True
-                break
-        
+        prefill_scheduled_success = False
+
         # NOTE: We will never schedule a prefill if there's decode sequences swapping in/out - we want to profile this
         # We should also never schedule a prefill if there are outstanding swapped out requests - this emulates FCFS backpressure behavior
         # TODO: implement keeping KV cache resident in CPU memory always to mitigate potential issues with this
@@ -72,11 +67,9 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
         if (
             not self.swapping_out and
             not self.swapping_in and
-            not self.swapped_out and
-            (running_prefills or waiting_prefill_available) and
-            len(self.running) < self.scheduler_config.max_num_seqs
+            not self.swapped_out
         ):
-            print(f"Iteration {self._iteration_id}: scheduling prefill")
+            # print(f"Iteration {self._iteration_id}: scheduling prefill")
             # NOTE: we keep decodes in memory, but don't add it to scheduled_seq_metadata list so it doesn't get run
             # NOTE: _schedule_prefills should also schedule running prefills
             (
@@ -86,12 +79,13 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
                 begin_swap_in_seq_ids,
                 begin_swap_out_seq_ids,
                 scheduled_seq_metadata_list
-            ) = self._schedule_prefills(running_prefills, now)  # NOTE: running_decodes doesn't really need to come first
-            
-            running = running_decodes + running
+            ) = self._schedule_prefills(running_prefills, running_decodes, now)
 
-        else:
-            print(f"Iteration {self._iteration_id}: scheduling decode")
+            if scheduled_seq_metadata_list:
+                prefill_scheduled_success = True
+        
+        if not prefill_scheduled_success:
+            # print(f"Iteration {self._iteration_id}: scheduling decode")
             (
                 running,
                 ignored_seq_ids,
@@ -99,16 +93,18 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
                 begin_swap_in_seq_ids,
                 begin_swap_out_seq_ids,
                 scheduled_seq_metadata_list
-            ) = self._schedule_decodes(running_decodes)
+            ) = self._schedule_decodes(running_decodes, now)
 
         self.running = running
+        self.running = self.policy.sort_by_priority(now, self.running)
+        self.waiting = self.policy.sort_by_priority(now, self.waiting)
 
-        print(f"Iteration {self._iteration_id} running: {running}")
-        print(f"Iteration {self._iteration_id} ignored: {ignored_seq_ids}")
-        print(f"Iteration {self._iteration_id} preempted: {preempted_seq_ids}")
-        print(f"Iteration {self._iteration_id} begin swap in: {begin_swap_in_seq_ids}")
-        print(f"Iteration {self._iteration_id} begin swap out: {begin_swap_out_seq_ids}")
-        print(f"Iteration {self._iteration_id} scheduled: {scheduled_seq_metadata_list}")
+        # print(f"Iteration {self._iteration_id} running: {running}")
+        # print(f"Iteration {self._iteration_id} ignored: {ignored_seq_ids}")
+        # print(f"Iteration {self._iteration_id} preempted: {preempted_seq_ids}")
+        # print(f"Iteration {self._iteration_id} begin swap in: {begin_swap_in_seq_ids}")
+        # print(f"Iteration {self._iteration_id} begin swap out: {begin_swap_out_seq_ids}")
+        # print(f"Iteration {self._iteration_id} scheduled: {scheduled_seq_metadata_list}")
 
         return SchedulerOutputs(
             id=self._iteration_id,

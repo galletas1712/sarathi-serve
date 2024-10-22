@@ -3,7 +3,7 @@
 import os
 import time
 from threading import Event, Thread
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 from pathlib import Path
 
 import torch
@@ -17,7 +17,7 @@ from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
 from sarathi.core.datatypes.sequence import SamplerOutputs
 from sarathi.core.sequence_manager.worker_sequence_manager import WorkerSequenceManager
 from sarathi.logger import init_logger
-from sarathi.metrics.metrics_store import MetricsStore
+from sarathi.metrics.alt_metrics_store import WorkerMetricsStore
 from sarathi.model_executor.utils import set_random_seed
 from sarathi.model_executor.attention import set_attention_backend
 from sarathi.model_executor.model_runner import ModelRunner
@@ -28,6 +28,7 @@ from sarathi.model_executor.parallel_utils.parallel_state import (
 )
 from sarathi.utils.threading_utils import exit_on_error, synchronized
 from sarathi.worker.cache_engine import CacheEngine
+from sarathi.config import DisaggEmulationSchedulerConfig
 
 logger = init_logger(__name__)
 
@@ -67,16 +68,14 @@ class BaseWorker:
         set_attention_backend(config.worker_config.attention_backend)
 
         self._verify_parallel_config()
-        self.metrics_store = MetricsStore.get_or_create_instance(
-            config.replica_config,
-            config.model_config,
-            config.metrics_config,
-        )
+        self.metrics_store = WorkerMetricsStore(isinstance(config.scheduler_config, DisaggEmulationSchedulerConfig))
 
         self._init_zmq_sockets()
 
         self.worker_ready_event = Event()
         self.execution_thread = Thread(target=self._execution_loop, daemon=True)
+
+        self.curr_batch_id = 0
 
     def _init_zmq_sockets(self):
         self.zmq_context = zmq.Context()
@@ -175,51 +174,59 @@ class BaseWorker:
 
     def on_step_completed(
         self, scheduler_outputs: SchedulerOutputs, sampler_outputs: SamplerOutputs
-    ) -> None:
-        self.seq_manager.on_step_completed(scheduler_outputs, sampler_outputs)
+    ) -> List[str]:
+        return self.seq_manager.on_step_completed(scheduler_outputs, sampler_outputs)
 
     @torch.inference_mode()
     def execute_model(
         self,
         scheduler_outputs: SchedulerOutputs,
     ) -> Optional[SamplerOutputs]:
-        torch.cuda.current_stream().synchronize()
-        batch_stage_start_time = time.monotonic()
+        # NOTE: not synchronizing at the top because we already did at the bottom
+        self.metrics_store.on_batch_start(batch_id=self.curr_batch_id)
 
-        logger.debug("Scheduler outputs:", scheduler_outputs)
+        print(f"Iteration: {self.curr_batch_id}, Scheduler outputs:", scheduler_outputs)
 
         # NOTE: on_schedule will set up block tables correspondingly
         _, seq_metadata_list = self.seq_manager.on_schedule(scheduler_outputs)
+        
+        self.metrics_store.on_batch_scheduled(
+            batch_id=self.curr_batch_id,
+            seq_metadata_list=seq_metadata_list
+        )
 
         # NOTE: Ordering of which ones are swapped out first
         swap_out_mappings = self.seq_manager.get_swap_out_mappings(scheduler_outputs.begin_swap_out_seq_ids)
         swap_in_mappings = self.seq_manager.get_swap_in_mappings(scheduler_outputs.begin_swap_in_seq_ids)
+
+        now = time.perf_counter()
+        for seq_id, _ in swap_out_mappings.items():
+            self.metrics_store.on_swap_start(seq_id, swap_in=False, start_timestamp=now)
+        for seq_id, _ in swap_in_mappings.items():
+            self.metrics_store.on_swap_start(seq_id, swap_in=True, start_timestamp=now)
+
         self.cache_engine.begin_swap_out(swap_out_mappings)
         self.cache_engine.begin_swap_in(swap_in_mappings)
 
         if seq_metadata_list:
             assert not scheduler_outputs.is_empty()  # Superset
+            # print(f"Iteration: {self.curr_batch_id}, executing model!")
             sampler_outputs = self.model_runner.run(
                 seq_metadata_list,
                 self.cache_engine.gpu_cache,
             )
+            # print(f"Iteration: {self.curr_batch_id}, model executed!")
         else:
+            # print(f"Iteration: {self.curr_batch_id}, no seq_metadata_list!")
             sampler_outputs = []
 
-        self.on_step_completed(scheduler_outputs, sampler_outputs)
+        finished_seq_ids = self.on_step_completed(scheduler_outputs, sampler_outputs)
 
+        # print(f"Iteration: {self.curr_batch_id}, before synchronize @ end of iteration")
         torch.cuda.current_stream().synchronize()
+        self.metrics_store.on_batch_end(batch_id=self.curr_batch_id, finished_seq_ids=finished_seq_ids)
 
-        batch_stage_end_time = time.monotonic()
-
-        self.metrics_store.on_batch_stage_end(
-            seq_metadata_list,
-            scheduler_outputs,
-            self.tensor_model_parallel_rank,
-            self.pipeline_model_parallel_rank,
-            batch_stage_start_time,
-            batch_stage_end_time,
-        )
+        self.curr_batch_id += 1
 
         return sampler_outputs
 
@@ -229,38 +236,42 @@ class BaseWorker:
 
         self.worker_ready_event.set()
 
-        iteration = 0
-
         while True:
-            logger.debug(f"Iteration: {iteration}")
+            logger.debug(f"Iteration: {self.curr_batch_id}")
             finished_swap_in_seq_ids, finished_swap_out_seq_ids = self.cache_engine.pop_finished()
+
+            now = time.perf_counter()
+            for seq_id in finished_swap_in_seq_ids:
+                self.metrics_store.on_swap_end(seq_id, swap_in=True, end_timestamp=now)
+            for seq_id in finished_swap_out_seq_ids:
+                self.metrics_store.on_swap_end(seq_id, swap_in=False, end_timestamp=now)
+
             if finished_swap_in_seq_ids:
-                logger.debug(f"Iteration {iteration}: WORKER SAID FINISHED SWAPPING IN {finished_swap_in_seq_ids}")
+                logger.debug(f"Iteration {self.curr_batch_id}: WORKER SAID FINISHED SWAPPING IN {finished_swap_in_seq_ids}")
             if finished_swap_out_seq_ids:
-                logger.debug(f"Iteration {iteration}: WORKER SAID FINISHED SWAPPING OUT {finished_swap_out_seq_ids}")
+                logger.debug(f"Iteration {self.curr_batch_id}: WORKER SAID FINISHED SWAPPING OUT {finished_swap_out_seq_ids}")
+
             self.seq_manager.mark_finished(finished_swap_in_seq_ids, finished_swap_out_seq_ids)
             self.notify_socket.send_pyobj((finished_swap_in_seq_ids, finished_swap_out_seq_ids))
 
             step_inputs = self.enqueue_socket.recv_pyobj()
 
             if step_inputs is None:
-                iteration += 1
                 continue
 
             for new_seq in step_inputs.new_seqs:
+                self.metrics_store.request_arrived(new_seq.seq_id, new_seq.arrival_time)
                 self.seq_manager.add_seq(new_seq)
 
             output = self.execute_model(step_inputs.scheduler_outputs)
 
             if not self.is_tensor_parallel_rank_zero:
-                iteration += 1
                 continue
 
             self.output_socket.send_pyobj(output)
-            iteration += 1
 
     @synchronized
-    def get_metrics_store(self) -> MetricsStore:
+    def get_metrics_store(self) -> WorkerMetricsStore:
         return self.metrics_store
 
     @synchronized

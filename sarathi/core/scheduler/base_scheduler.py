@@ -9,7 +9,6 @@ from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
 from sarathi.core.datatypes.sequence import Sequence, SequenceStatus
 from sarathi.core.policy import PolicyFactory
 from sarathi.logger import init_logger
-from sarathi.metrics.metrics_store import MetricsStore
 
 logger = init_logger(__name__)
 
@@ -23,7 +22,6 @@ class BaseScheduler(ABC):
         cache_config: CacheConfig,
         parallel_config: ParallelConfig,
     ) -> None:
-        self.metrics_store = MetricsStore.get_instance()
         self.model_config = model_config
         self.scheduler_config = scheduler_config
         self.cache_config = cache_config
@@ -164,7 +162,7 @@ class BaseScheduler(ABC):
                 f"Input prompt ({seq.get_len()} tokens) is too long"
                 f" and exceeds limit of {self.prompt_limit}"
             )
-            seq.set_status(SequenceStatus.FINISHED_IGNORED)
+            seq.set_status(SequenceStatus.FINISHED_IGNORED, self._iteration_id)
             self.waiting.pop(0)
             return False
 

@@ -114,13 +114,13 @@ class BaseBlockSpaceManager(ABC):
     def append_slot(self, seq: Sequence, device: BlockDevice = BlockDevice.GPU) -> None:
         """Allocate a physical slot for a new token."""
         assert device == BlockDevice.GPU
-        assert self.can_append_slot(device)
         logical_blocks = seq.logical_token_blocks
         block_table = self.block_tables[seq.seq_id][device]
 
         if len(block_table) < len(logical_blocks):
             # The sequence has a new logical block.
             # Allocate a new physical block.
+            assert self.can_append_slot(device)
             block = self.allocators[device].allocate()
             block_table.append(block)
 
@@ -128,7 +128,7 @@ class BaseBlockSpaceManager(ABC):
         block_table = self.block_tables[seq_id][device]
         for block in set(block_table):
             self.allocators[device].free(block)
-        del self.block_tables[seq_id][device]
+        self.block_tables[seq_id].pop(device)
 
     def _free_block_table(self, seq_id: str) -> None:
         if seq_id not in self.block_tables:
@@ -140,7 +140,7 @@ class BaseBlockSpaceManager(ABC):
 
     def free(self, seq_id: str) -> None:
         self._free_block_table(seq_id)
-        del self.block_tables[seq_id]
+        self.block_tables.pop(seq_id)
 
     def reset(self) -> None:
         for seq_id in self.block_tables.keys():
@@ -158,6 +158,7 @@ class BaseBlockSpaceManager(ABC):
         return seq_id in self.block_tables and BlockDevice.CPU in self.block_tables[seq_id]
     
     def can_swap_in(self, seq_id: str) -> bool:
+        # print(f"Can swap in? {seq_id}, {list(self.block_tables.keys())}")
         assert seq_id in self.block_tables
         assert BlockDevice.GPU not in self.block_tables[seq_id] and BlockDevice.CPU in self.block_tables[seq_id]
 
@@ -177,12 +178,14 @@ class BaseBlockSpaceManager(ABC):
             self.block_tables[seq_id][BlockDevice.GPU].append(gpu_block)
         
         self.swap_in_mapping[seq_id] = swap_in_mapping
+        # print(f"Begin swap in {seq_id} {list(self.block_tables.keys())}")
         
     def finish_swap_in(self, seq_id: str):
         self._free_device_blocks(seq_id, BlockDevice.CPU)
-
+        # print(f"Finish swap in {seq_id} {list(self.block_tables.keys())}")
 
     def can_swap_out(self, seq_id: str) -> bool:
+        # print(f"Finish swap in {seq_id} {list(self.block_tables.keys())}")
         assert seq_id in self.block_tables
         assert BlockDevice.CPU not in self.block_tables[seq_id] and BlockDevice.GPU in self.block_tables[seq_id]
 
@@ -202,9 +205,11 @@ class BaseBlockSpaceManager(ABC):
             self.block_tables[seq_id][BlockDevice.CPU].append(cpu_block)
         
         self.swap_out_mapping[seq_id] = swap_out_mapping
+        # print(f"Finish swap in {seq_id} {list(self.block_tables.keys())}")
     
     def finish_swap_out(self, seq_id: str):
         self._free_device_blocks(seq_id, BlockDevice.GPU)
+        # print(f"Finish swap in {seq_id} {list(self.block_tables.keys())}")
 
     def get_swap_in_mapping(self, seq_id: str) -> List[int]:
         return self.swap_in_mapping[seq_id]

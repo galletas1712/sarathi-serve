@@ -15,7 +15,7 @@ class ZipfRequestLengthGenerator(BaseRequestLengthGenerator):
         self.zipf_generator = ZipfGenerator(
             config.min_tokens,
             config.max_tokens,
-            config.generator_theta,
+            config.theta,
             config.scramble,
             config.seed,
         )

@@ -2,7 +2,7 @@ import datetime
 from tqdm import tqdm
 from typing import List
 
-from sarathi.config import ModelConfig, ParallelConfig, OccasionalSwappingSchedulerConfig, MetricsConfig, SystemConfig, ReplicaConfig
+from sarathi.config import ModelConfig, ParallelConfig, FCFSDisaggEmulationSchedulerConfig, MetricsConfig, SystemConfig, ReplicaConfig
 from sarathi import LLMEngine, SamplingParams, RequestOutput
 
 
@@ -40,7 +40,7 @@ parallel_config = ParallelConfig(
     pipeline_parallel_size=1,
 )
 
-scheduler_config = OccasionalSwappingSchedulerConfig()
+scheduler_config = FCFSDisaggEmulationSchedulerConfig()
 
 metrics_config = MetricsConfig(
     write_metrics=True,
@@ -63,24 +63,29 @@ def generate(
     prompts: List[str],
     sampling_params: SamplingParams,
 ) -> List[RequestOutput]:
-    for prompt in prompts:
+    for prompt in prompts[:5]:
         llm_engine.add_request(prompt, sampling_params)
     
     num_requests = llm_engine.get_num_unfinished_requests()
     pbar = tqdm(total=num_requests, desc="Processed prompts")
 
-    llm_engine.start_profiling()
+    # llm_engine.start_profiling()
 
     # Run the engine
     outputs: List[RequestOutput] = []
+    iteration = 0
     while llm_engine.has_unfinished_requests():
+        if iteration == 10:
+            for prompt in prompts[5:]:
+                llm_engine.add_request(prompt, sampling_params)
         step_outputs = llm_engine.step()
         for output in step_outputs:
             if output.finished:
                 outputs.append(output)
                 pbar.update(1)
+        iteration += 1
     
-    llm_engine.stop_profiling()
+    # llm_engine.stop_profiling()
 
     pbar.close()
     # Sort the outputs by request ID.

@@ -71,12 +71,6 @@ class BaseLLMEngine:
         self.seq_manager = EngineSequenceManager(self.tokenizer, config)
         self.seq_counter = Counter()
 
-        self.metrics_store = MetricsStore.get_or_create_instance(
-            config.replica_config,
-            config.model_config,
-            config.metrics_config,
-        )
-
         self.worker_map: Dict[ModelParallelRank, int] = {}
 
         # Initialize the cluster.
@@ -180,7 +174,6 @@ class BaseLLMEngine:
 
         # Initialize torch distributed process group for the workers.
         config = copy.deepcopy(self.config)
-        config.metrics_config = self.metrics_store.get_config_for_worker()
 
         worker_impl = self._get_worker_impl()
 
@@ -239,7 +232,7 @@ class BaseLLMEngine:
                 f"Need {max_blocks_per_request}, available {num_gpu_blocks} gpu blocks. "
                 f"Try decreasing `max_batch_size`, `max_model_len`."
             )
-        self.config.cache_config.num_gpu_blocks = num_gpu_blocks
+        self.config.cache_config.num_gpu_blocks = 512  # TODO: DANGER!!!! CHANGE!!!
 
         # Initialize the cache.
         self._run_workers(
@@ -271,14 +264,6 @@ class BaseLLMEngine:
             )
             self.scheduler.on_step_completed()
 
-        end_time = time.perf_counter()
-
-        self.metrics_store.on_batch_end(
-            seq_metadata_list=seq_metadata_list,
-            scheduler_outputs=scheduler_outputs,
-            batch_start_time=start_time,
-            batch_end_time=end_time,
-        )
         all_request_outputs = self.seq_manager.generate_request_outputs(
             ignored_seqs, seq_metadata_list
         )
@@ -312,7 +297,7 @@ class BaseLLMEngine:
                 the current time.
         """
         if arrival_time is None:
-            arrival_time = time.monotonic()
+            arrival_time = time.perf_counter()
 
         if not seq_id:
             seq_id = str(next(self.seq_counter))
@@ -341,7 +326,6 @@ class BaseLLMEngine:
         # which is unaffected by the engine's actions
         self._append_new_seq(copy.deepcopy(seq))
         self.scheduler.add_seq(seq)
-        self.metrics_store.on_request_arrival(seq)
 
     @synchronized
     def _append_new_seq(self, seq: Sequence) -> None:
@@ -390,8 +374,6 @@ class BaseLLMEngine:
             # Need to send to worker because it's expecting something
             self.enqueue_socket.send_pyobj(None)
             return []
-
-        logger.debug(f"Engine scheduler outputs: {scheduler_outputs}")
 
         ignored_seqs, seq_metadata_list = self.seq_manager.on_schedule(
             scheduler_outputs
@@ -475,24 +457,21 @@ class BaseLLMEngine:
 
         return output
 
-    def plot_metrics(self) -> None:
-        self.metrics_store.plot()
-
     def pull_worker_metrics(self) -> None:
         worker_metrics = self._run_workers(
             "get_metrics_store",
             get_all_outputs=True,
         )
-        for worker_metric in worker_metrics:
-            self.metrics_store.merge(worker_metric)
 
-    def mark_initial_memory_profiling_done(self):
-        self.metrics_store.mark_initial_memory_profiling_done()
-        self._run_workers("mark_initial_memory_profiling_done", get_all_outputs=True)
+        # TODO: support multiple workers
+        assert len(worker_metrics) == 1
+        self.metrics_store = worker_metrics[0]
+    
+    def mark_initial_memory_profiling_done(self) -> None:
+        self._run_workers("mark_initial_memory_profiling_done")
 
     def reset_metrics(self) -> None:
         self.scheduler.reset_state()
-        self.metrics_store.reset()
         self._run_workers("reset_metrics", get_all_outputs=True)
 
     def start_profiling(self) -> None:

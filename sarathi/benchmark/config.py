@@ -55,7 +55,7 @@ class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
 @dataclass
 class PoissonRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
     qps: float = field(
-        default=1.0,
+        default=64.0,
         metadata={"help": "Queries per second for the Poisson distribution."},
     )
 
@@ -110,7 +110,7 @@ class TraceRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
 @dataclass
 class ZipfRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
     theta: float = field(
-        default=0.6, metadata={"help": "Theta parameter for the Zipf distribution."}
+        default=0.9, metadata={"help": "Theta parameter for the Zipf distribution."}
     )
     scramble: bool = field(
         default=False, metadata={"help": "Whether to scramble the Zipf distribution."}
@@ -122,7 +122,7 @@ class ZipfRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
         default=4096, metadata={"help": "Maximum number of tokens."}
     )
     prefill_to_decode_ratio: float = field(
-        default=20.0, metadata={"help": "Ratio of prefill tokens to decode tokens."}
+        default=1.0, metadata={"help": "Ratio of prefill tokens to decode tokens."}
     )
 
     @staticmethod
@@ -171,7 +171,7 @@ class BaseRequestGeneratorConfig(BasePolyConfig):
 @dataclass
 class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
     length_generator_config: BaseRequestLengthGeneratorConfig = field(
-        default_factory=FixedRequestLengthGeneratorConfig
+        default_factory=ZipfRequestLengthGeneratorConfig
     )
     interval_generator_config: BaseRequestIntervalGeneratorConfig = field(
         default_factory=PoissonRequestIntervalGeneratorConfig

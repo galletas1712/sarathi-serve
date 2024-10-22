@@ -6,6 +6,7 @@ from sarathi.metrics.constants import OperationMetrics
 from sarathi.metrics.metrics_store import MetricsStore
 
 
+# TODO: come back and enable this
 class CudaTimer:
 
     def __init__(
@@ -15,11 +16,12 @@ class CudaTimer:
         rank: Optional[int] = None,
     ):
         self.name = name
-        self.metrics_store = MetricsStore.get_instance()
+        # self.metrics_store = MetricsStore.get_instance()
         self.layer_id = layer_id
-        self.disabled = (name is None) or not self.metrics_store.is_op_enabled(
-            metric_name=self.name, layer_id=layer_id, rank=rank
-        )
+        # self.disabled = (name is None) or not self.metrics_store.is_op_enabled(
+        #     metric_name=self.name, layer_id=layer_id, rank=rank
+        # )
+        self.disabled = True  # TODO: remove this line
 
         if self.disabled:
             return
@@ -48,10 +50,10 @@ class CudaTimer:
     def handle_trace(self, trace):
         total_cuda_time = sum([e.cuda_time_total for e in trace.key_averages()])
 
-        self.metrics_store.push_operation_metrics(
-            self.name,
-            total_cuda_time * 1e-3,  # convert to ms
-        )
+        # self.metrics_store.push_operation_metrics(
+        #     self.name,
+        #     total_cuda_time * 1e-3,  # convert to ms
+        # )
 
     def __exit__(self, *args):
         if self.disabled:
@@ -60,8 +62,8 @@ class CudaTimer:
         if self.use_cuda_events:
             self.end_event = torch.cuda.Event(enable_timing=True)
             self.end_event.record()
-            self.metrics_store.push_operation_metrics_events(
-                self.name, self.start_event, self.end_event
-            )
+            # self.metrics_store.push_operation_metrics_events(
+            #     self.name, self.start_event, self.end_event
+            # )
         else:
             self.profiler.__exit__(*args)

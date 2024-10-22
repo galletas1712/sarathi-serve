@@ -128,7 +128,7 @@ class BaseSequenceManager(ABC):
         self,
         seq: Sequence,
         sample: SamplerOutput,
-    ) -> None:
+    ) -> bool:
         # at this point, the seq should be in paused state
         assert not seq.is_finished()
 
@@ -143,13 +143,18 @@ class BaseSequenceManager(ABC):
         seq.check_stop()
         if seq.is_finished():
             self._free_seq(seq.seq_id)
+            return True
+        
+        return False
 
     @synchronized
     def on_step_completed(
         self,
         scheduler_outputs: SchedulerOutputs,
         sampler_outputs: Optional[SamplerOutputs],
-    ) -> None:
+    ) -> List[str]:
+        finished_seq_ids = []
+
         for scheduled_seq_metadata, sampler_output in zip(
             scheduler_outputs.scheduled_seq_metadata_list, sampler_outputs
         ):
@@ -173,10 +178,14 @@ class BaseSequenceManager(ABC):
 
             self._pause_seq(scheduled_seq_metadata.seq_id)
 
-            self._process_seq_output(
+            finished = self._process_seq_output(
                 seq,
                 sampler_output,
             )
+            if finished:
+                finished_seq_ids.append(seq.seq_id)
+        
+        return finished_seq_ids
 
     def generate_request_outputs(
         self,
