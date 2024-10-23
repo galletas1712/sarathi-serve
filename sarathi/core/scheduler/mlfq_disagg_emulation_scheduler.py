@@ -32,7 +32,6 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         super().__init__(model_config, scheduler_config, cache_config, parallel_config)
         self.quantums = scheduler_config.get_quantums()
 
-        self.num_consecutive_iterations: Dict[str, int] = {}
         self.decode_queues: List[List[Sequence]] = [[] for _ in range(len(self.quantums))]
         self.request_quantum_map = {}
 
@@ -146,32 +145,18 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             indices_to_remove = []
             for i in range(len(self.decode_queues[quantum_idx])):
                 seq = self.decode_queues[quantum_idx][i]
-                next_quantum = self._get_quantum(self.num_consecutive_iterations[seq.seq_id])
+                next_quantum = self._get_quantum(seq.get_output_len())
                 if next_quantum != quantum_idx:
-                    # print(f"Moving {seq.seq_id} from quantum {quantum_idx} to {next_quantum} since run count is {self.num_consecutive_iterations[seq.seq_id]}")
+                    # print(f"Moving {seq.seq_id} from quantum {quantum_idx} to {next_quantum} since run count is {seq.get_output_len()}")
                     self.decode_queues[next_quantum].append(seq)
                     self.request_quantum_map[seq.seq_id] = next_quantum
                     indices_to_remove.append(i)
             for i in reversed(indices_to_remove):
                 self.decode_queues[quantum_idx].pop(i)
     
-    def _update_num_consecutive_iterations(self, running: List[Sequence]):
-        running_seq_ids = [seq.seq_id for seq in running]
-
-        for seq_id in running_seq_ids:
-            if seq_id not in self.num_consecutive_iterations:
-                self.num_consecutive_iterations[seq_id] = 0
-            self.num_consecutive_iterations[seq_id] += 1
-        
-        for seq_id in list(self.num_consecutive_iterations.keys()):
-            if seq_id not in running_seq_ids:
-                self.num_consecutive_iterations[seq_id] = 0
-    
     def _free_seq(self, seq: Sequence) -> None:
         super()._free_seq(seq)
 
-        if seq.seq_id in self.num_consecutive_iterations:
-            del self.num_consecutive_iterations[seq.seq_id]
         if seq.seq_id in self.request_quantum_map:
             self.decode_queues[self.request_quantum_map[seq.seq_id]].remove(seq)
             del self.request_quantum_map[seq.seq_id]
@@ -244,8 +229,6 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                     self._begin_swap_in(seq)
                     begin_swap_in_seq_ids.append(seq.seq_id)
         
-        self._update_num_consecutive_iterations(running)
-
         return (
             running,
             [],

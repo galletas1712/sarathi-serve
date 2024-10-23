@@ -304,7 +304,7 @@ class FCFSDisaggEmulationSchedulerConfig(DisaggEmulationSchedulerConfig):
 @dataclass
 class MLFQDisaggEmulationSchedulerConfig(DisaggEmulationSchedulerConfig):
     quantums: List[int] = field(
-        default_factory=lambda: [32, 128, 512],  # TODO: add more quantums, but only test till 512 for now
+        default_factory=lambda: [128, 256, 512, 1024, 2048, 4096, 8192],
     )
 
     def get_quantums(self):

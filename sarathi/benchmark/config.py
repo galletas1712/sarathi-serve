@@ -55,7 +55,7 @@ class TraceRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
 @dataclass
 class PoissonRequestIntervalGeneratorConfig(BaseRequestIntervalGeneratorConfig):
     qps: float = field(
-        default=64.0,
+        default=1.0,
         metadata={"help": "Queries per second for the Poisson distribution."},
     )
 
@@ -116,13 +116,13 @@ class ZipfRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
         default=False, metadata={"help": "Whether to scramble the Zipf distribution."}
     )
     min_tokens: int = field(
-        default=1024, metadata={"help": "Minimum number of tokens."}
+        default=512, metadata={"help": "Minimum number of tokens."}
     )
     max_tokens: int = field(
-        default=4096, metadata={"help": "Maximum number of tokens."}
+        default=8192, metadata={"help": "Maximum number of tokens."}
     )
     prefill_to_decode_ratio: float = field(
-        default=1.0, metadata={"help": "Ratio of prefill tokens to decode tokens."}
+        default=0.2, metadata={"help": "Ratio of prefill tokens to decode tokens."}
     )
 
     @staticmethod
@@ -177,7 +177,7 @@ class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
         default_factory=PoissonRequestIntervalGeneratorConfig
     )
     num_requests: int = field(
-        default=64, metadata={"help": "Number of requests to generate."}
+        default=256, metadata={"help": "Number of requests to generate."}
     )
     duration: float = field(
         default=None, metadata={"help": "Duration of the synthetic request generation."}
