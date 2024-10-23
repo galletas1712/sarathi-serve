@@ -1,5 +1,4 @@
 from typing import Dict, List
-from collections import deque
 
 from sarathi.config import (
     CacheConfig,
@@ -35,7 +34,8 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         self.quantums = scheduler_config.get_quantums()
 
         self.num_consecutive_iterations: Dict[str, int] = {}
-        self.queues = [deque() for _ in range(len(self.quantums))]
+        self.decode_queues: List[List[Sequence]] = [[] for _ in range(len(self.quantums))]
+        self.request_quantum_map = {}
 
     def _get_seq_next_num_prefill_tokens(
         self, seq: Sequence, num_batched_tokens: int
@@ -142,59 +142,105 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         
         return quantum_idx
     
-    def add_seq(self, seq: Sequence) -> None:
-        # Add sequence groups to the waiting queue.
-        self.waiting.append(seq)
-        self.num_consecutive_iterations[seq.seq_id] = 0
+    def _update_quantums(self):
+        for quantum_idx in range(len(self.quantums)):
+            while self.decode_queues[quantum_idx]:
+                seq = self.decode_queues[quantum_idx].pop(0)
+                next_quantum = self._get_quantum(self.num_consecutive_iterations[seq.seq_id])
+                if next_quantum != quantum_idx:
+                    self.decode_queues[next_quantum].append(seq)
+                    self.request_quantum_map[seq.seq_id] = next_quantum
+                else:
+                    self.decode_queues[quantum_idx].insert(0, seq)
+    
+    def _update_num_consecutive_iterations(self, running: List[Sequence]):
+        running_seq_ids = [seq.seq_id for seq in running]
 
+        for seq_id in running_seq_ids:
+            if seq_id not in self.num_consecutive_iterations:
+                self.num_consecutive_iterations[seq_id] = 0
+            self.num_consecutive_iterations[seq_id] += 1
+        
+        for seq_id in list(self.num_consecutive_iterations.keys()):
+            if seq_id not in running_seq_ids:
+                self.num_consecutive_iterations[seq_id] = 0
+    
+    def _free_seq(self, seq: Sequence) -> None:
+        super()._free_seq(seq)
+
+        if seq.seq_id in self.num_consecutive_iterations:
+            del self.num_consecutive_iterations[seq.seq_id]
+        if seq.seq_id in self.request_quantum_map:
+            self.decode_queues[self.request_quantum_map[seq.seq_id]].remove(seq)
+            del self.request_quantum_map[seq.seq_id]
+        
     def _schedule_decodes(self, running_decodes: List[Sequence]):
         running = []
         begin_swap_in_seq_ids = []
         begin_swap_out_seq_ids = []
         scheduled_seq_id_metadata_list = []
-
         num_batched_tokens = 0
 
-        while running_decodes:
-            seq = running_decodes.pop(0)
+        self._update_quantums()
 
-            if not seq.is_paused():
-                running.append(seq)
+        # At this point, running_decodes could include some previously finished prefills
+        # It can also include recently swapped in requests
+        # It's also in FCFS order
+        for seq in running_decodes:
+            if seq.seq_id not in self.request_quantum_map:
+                quantum_idx = self._get_quantum(0)  # Always 0 quantum
+                self.decode_queues[quantum_idx].append(seq)
+                self.request_quantum_map[seq.seq_id] = quantum_idx
+        
+        # Here, we're sorting all of our requests in order of quantum
+        queue: List[Sequence] = []
+        for seqs in self.decode_queues:
+            queue.extend(seqs)
+    
+        while queue:
+            seq = queue.pop(0)
+
+            if not seq.is_paused() and not seq.is_swapped_out():
+                assert seq.is_swapping_out() or seq.is_swapping_in()
                 continue
 
-            while not self.block_manager.can_append_slot():
+            def can_schedule():
+                if seq.is_paused():
+                    return self.block_manager.can_append_slot()
+                elif seq.is_swapped_out():
+                    return self.block_manager.can_swap_in(seq.seq_id)
+                else:
+                    raise ValueError(f"Invalid sequence status: {seq.get_status()}")
+
+            while not can_schedule():
                 if running_decodes:
-                    # Preempt the lowest-priority sequence groups.
+                    # Swap out the lowest-priority sequence groups.
                     victim_seq = running_decodes.pop(-1)
                     self._begin_swap_out(victim_seq)
                     begin_swap_out_seq_ids.append(victim_seq.seq_id)
                 else:
                     # No other sequence groups can be preempted.
-                    # Preempt the current sequence group.
-                    self._begin_swap_out(seq)
-                    begin_swap_out_seq_ids.append(seq.seq_id)
+                    # Swap out the current sequence group if it's in memory
+                    # Otherwise do nothing
+                    if seq.is_paused():
+                        self._begin_swap_out(seq)
+                        begin_swap_out_seq_ids.append(seq.seq_id)
                     break
             else:
-                # Append new slots to the sequence group.
-                self._append_slot(seq)
-                running.append(seq)
-                num_batched_tokens += 1
-                scheduled_seq_id_metadata_list.append(
-                    SequenceScheduleMetadata.from_sequence(seq)
-                )
+                if seq.is_paused():
+                    # Append new slots to the sequence group.
+                    self._append_slot(seq)
+                    running.append(seq)
+                    num_batched_tokens += 1
+                    scheduled_seq_id_metadata_list.append(
+                        SequenceScheduleMetadata.from_sequence(seq)
+                    )
+                elif seq.is_swapped_out():
+                    self._begin_swap_in(seq)
+                    begin_swap_in_seq_ids.append(seq.seq_id)
         
-        # Swap in outstanding swapped out sequences if we have room
-        # This assumes FCFS backpressure behavior in the base scheduler
-        swapped_out = list(sorted(self.swapped_out.values(), key=lambda x: x.arrival_time))
-        while swapped_out:
-            seq = swapped_out.pop(0)
+        self._update_num_consecutive_iterations(running)
 
-            if not self.block_manager.can_swap_in(seq.seq_id):
-                break
-            
-            self._begin_swap_in(seq)
-            begin_swap_in_seq_ids.append(seq.seq_id)
-        
         return (
             running,
             [],

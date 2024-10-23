@@ -31,7 +31,7 @@ class BaseScheduler(ABC):
         self._iteration_id = -1
 
         # Instantiate the scheduling policy.
-        self.policy = PolicyFactory.get_policy(policy_name="fcfs")
+        self.policy = None
         # Create the block space manager.
         self.block_manager = BlockSpaceManagerRegistry.get(
             scheduler_config.get_type(),
@@ -173,7 +173,6 @@ class BaseScheduler(ABC):
                 f"Input prompt ({seq.get_len()} tokens) is too long"
                 f" and exceeds limit of {self.prompt_limit}"
             )
-            seq.set_status(SequenceStatus.FINISHED_IGNORED)
             self.waiting.pop(0)
             return False
 

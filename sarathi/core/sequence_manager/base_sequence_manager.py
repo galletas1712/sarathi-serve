@@ -28,6 +28,12 @@ class BaseSequenceManager(ABC):
     def _free_seq(self, seq_id: str) -> None:
         assert seq_id in self.seq_map
         del self.seq_map[seq_id]
+    
+    def _ignore_seq(self, seq_id: str) -> None:
+        assert seq_id in self.seq_map
+        seq = self.seq_map[seq_id]
+        seq.set_status(SequenceStatus.FINISHED_IGNORED)
+        self._free_seq(seq_id)
 
     def _preempt_seq(self, seq_id: str) -> None:
         assert seq_id in self.seq_map
@@ -81,7 +87,7 @@ class BaseSequenceManager(ABC):
         scheduler_outputs: SchedulerOutputs,
     ) -> None:
         for seq_id in scheduler_outputs.ignored_seq_ids:
-            self._free_seq(seq_id)
+            self._ignore_seq(seq_id)
 
         for seq_id in scheduler_outputs.preempted_seq_ids:
             self._preempt_seq(seq_id)
