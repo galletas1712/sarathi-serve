@@ -178,14 +178,13 @@ class BaseBlockSpaceManager(ABC):
             self.block_tables[seq_id][BlockDevice.GPU].append(gpu_block)
         
         self.swap_in_mapping[seq_id] = swap_in_mapping
-        # print(f"Begin swap in {seq_id} {list(self.block_tables.keys())}")
+        print(f"Begin swap in {seq_id} {list(self.block_tables.keys())}")
         
     def finish_swap_in(self, seq_id: str):
         self._free_device_blocks(seq_id, BlockDevice.CPU)
-        # print(f"Finish swap in {seq_id} {list(self.block_tables.keys())}")
+        print(f"Finish swap in {seq_id} {list(self.block_tables.keys())}")
 
     def can_swap_out(self, seq_id: str) -> bool:
-        # print(f"Finish swap in {seq_id} {list(self.block_tables.keys())}")
         assert seq_id in self.block_tables
         assert BlockDevice.CPU not in self.block_tables[seq_id] and BlockDevice.GPU in self.block_tables[seq_id]
 
@@ -205,11 +204,11 @@ class BaseBlockSpaceManager(ABC):
             self.block_tables[seq_id][BlockDevice.CPU].append(cpu_block)
         
         self.swap_out_mapping[seq_id] = swap_out_mapping
-        # print(f"Finish swap in {seq_id} {list(self.block_tables.keys())}")
+        print(f"Begin swap out {seq_id} {list(self.block_tables.keys())}")
     
     def finish_swap_out(self, seq_id: str):
         self._free_device_blocks(seq_id, BlockDevice.GPU)
-        # print(f"Finish swap in {seq_id} {list(self.block_tables.keys())}")
+        print(f"Finish swap out {seq_id} {list(self.block_tables.keys())}")
 
     def get_swap_in_mapping(self, seq_id: str) -> List[int]:
         return self.swap_in_mapping[seq_id]

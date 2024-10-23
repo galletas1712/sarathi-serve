@@ -30,7 +30,6 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         parallel_config: ParallelConfig,
     ) -> None:
         super().__init__(model_config, scheduler_config, cache_config, parallel_config)
-        self.policy = PolicyFactory.get_policy("mlfq")
         self.quantums = scheduler_config.get_quantums()
 
         self.num_consecutive_iterations: Dict[str, int] = {}
@@ -143,15 +142,18 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         return quantum_idx
     
     def _update_quantums(self):
-        for quantum_idx in range(len(self.quantums)):
-            while self.decode_queues[quantum_idx]:
-                seq = self.decode_queues[quantum_idx].pop(0)
+        for quantum_idx in reversed(range(len(self.quantums))):
+            indices_to_remove = []
+            for i in range(len(self.decode_queues[quantum_idx])):
+                seq = self.decode_queues[quantum_idx][i]
                 next_quantum = self._get_quantum(self.num_consecutive_iterations[seq.seq_id])
                 if next_quantum != quantum_idx:
+                    # print(f"Moving {seq.seq_id} from quantum {quantum_idx} to {next_quantum} since run count is {self.num_consecutive_iterations[seq.seq_id]}")
                     self.decode_queues[next_quantum].append(seq)
                     self.request_quantum_map[seq.seq_id] = next_quantum
-                else:
-                    self.decode_queues[quantum_idx].insert(0, seq)
+                    indices_to_remove.append(i)
+            for i in reversed(indices_to_remove):
+                self.decode_queues[quantum_idx].pop(i)
     
     def _update_num_consecutive_iterations(self, running: List[Sequence]):
         running_seq_ids = [seq.seq_id for seq in running]
@@ -174,7 +176,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             self.decode_queues[self.request_quantum_map[seq.seq_id]].remove(seq)
             del self.request_quantum_map[seq.seq_id]
         
-    def _schedule_decodes(self, running_decodes: List[Sequence]):
+    def _schedule_decodes(self, running_decodes: List[Sequence], now: float):
         running = []
         begin_swap_in_seq_ids = []
         begin_swap_out_seq_ids = []
@@ -213,15 +215,18 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                     raise ValueError(f"Invalid sequence status: {seq.get_status()}")
 
             while not can_schedule():
-                if running_decodes:
-                    # Swap out the lowest-priority sequence groups.
-                    victim_seq = running_decodes.pop(-1)
+                # Need to search for the lowest priority sequence actually running
+                victim_idx = len(queue) - 1
+                while victim_idx >= 0:
+                    if queue[victim_idx].is_paused():
+                        break
+                    victim_idx -= 1
+
+                if victim_idx >= 0:
+                    victim_seq = queue.pop(victim_idx)
                     self._begin_swap_out(victim_seq)
                     begin_swap_out_seq_ids.append(victim_seq.seq_id)
                 else:
-                    # No other sequence groups can be preempted.
-                    # Swap out the current sequence group if it's in memory
-                    # Otherwise do nothing
                     if seq.is_paused():
                         self._begin_swap_out(seq)
                         begin_swap_out_seq_ids.append(seq.seq_id)

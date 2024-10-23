@@ -254,18 +254,18 @@ class BaseLLMEngine:
         scheduler_outputs: SchedulerOutputs,
         sampler_outputs: Optional[SamplerOutputs],
     ) -> List[RequestOutput]:
+        ignored_seqs = [self.seq_manager.seq_map[seq_id] for seq_id in scheduler_outputs.ignored_seq_ids]
+        executed_seqs = [
+            self.seq_manager.seq_map[seq_id_metadata.seq_id]
+            for seq_id_metadata in scheduler_outputs.scheduled_seq_id_metadata_list
+        ]
+
         with self._process_model_outputs_timer:
             self.seq_manager.on_step_completed(
                 scheduler_outputs,
                 sampler_outputs,
             )
             self.scheduler.on_step_completed()
-
-        ignored_seqs = [self.seq_manager.seq_map[seq_id] for seq_id in scheduler_outputs.ignored_seq_ids]
-        executed_seqs = [
-            self.seq_manager.seq_map[seq_id_metadata.seq_id]
-            for seq_id_metadata in scheduler_outputs.scheduled_seq_id_metadata_list
-        ]
 
         return [RequestOutput.from_seq(seq) for seq in ignored_seqs + executed_seqs]
 

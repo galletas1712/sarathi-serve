@@ -131,13 +131,13 @@ class BaseSequenceManager(ABC):
     @synchronized
     def on_step_completed(
         self,
-        seq_id_metadata_list: List[SequenceScheduleMetadata],
+        scheduler_outputs: SchedulerOutputs,
         sampler_outputs: Optional[SamplerOutputs],
     ) -> List[str]:
         finished_seq_ids = []
 
         for seq_id_metadata, sampler_output in zip(
-            seq_id_metadata_list, sampler_outputs
+            scheduler_outputs.scheduled_seq_id_metadata_list, sampler_outputs
         ):
             seq_id = seq_id_metadata.seq_id
             assert seq_id == sampler_output.seq_id

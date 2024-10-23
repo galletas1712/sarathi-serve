@@ -86,7 +86,7 @@ class WorkerSequenceManager(BaseSequenceManager):
                 block_table=self.block_manager.get_gpu_block_table(seq_id_metadata.seq_id),
                 prompt_chunk_len=seq_id_metadata.prompt_chunk_len,
             )
-            for seq_id_metadata in scheduler_outputs.scheduled_seq_id_metadata
+            for seq_id_metadata in scheduler_outputs.scheduled_seq_id_metadata_list
         ]
 
     def get_swap_out_mappings(self, swap_out_seq_ids: List[str]) -> Dict[str, List[int]]:

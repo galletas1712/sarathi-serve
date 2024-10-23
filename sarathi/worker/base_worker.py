@@ -185,7 +185,7 @@ class BaseWorker:
         # on_schedule will set up block tables, but not extract them
         self.seq_manager.on_schedule(scheduler_outputs)
         # This will actually extract the block tables
-        seq_metadata_list = self.seq_manager.get_seq_metadata_list()
+        seq_metadata_list = self.seq_manager.get_seq_metadata_list(scheduler_outputs)
         
         self.metrics_store.on_batch_scheduled(
             batch_id=self.curr_batch_id,

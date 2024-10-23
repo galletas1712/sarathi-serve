@@ -439,7 +439,7 @@ class SystemConfig:
     cache_config: CacheConfig = field(default_factory=CacheConfig)
     parallel_config: ParallelConfig = field(default_factory=ParallelConfig)
     scheduler_config: BaseSchedulerConfig = field(
-        default_factory=FCFSDisaggEmulationSchedulerConfig
+        default_factory=MLFQDisaggEmulationSchedulerConfig
     )
     metrics_config: MetricsConfig = field(default_factory=MetricsConfig)
 
@@ -453,7 +453,7 @@ class BaseEndpointConfig(ABC):
     cache_config: CacheConfig = field(default_factory=CacheConfig)
     parallel_config: ParallelConfig = field(default_factory=ParallelConfig)
     scheduler_config: BaseSchedulerConfig = field(
-        default_factory=FCFSDisaggEmulationSchedulerConfig
+        default_factory=MLFQDisaggEmulationSchedulerConfig
     )
     metrics_config: MetricsConfig = field(default_factory=MetricsConfig)
 
