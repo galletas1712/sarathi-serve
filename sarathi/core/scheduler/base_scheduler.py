@@ -59,14 +59,14 @@ class BaseScheduler(ABC):
 
     def reset_state(self) -> None:
         self._iteration_id = -1
+        # TODO: reset all queues
 
     def add_seq(self, seq: Sequence) -> None:
         # Add sequence groups to the waiting queue.
         self.waiting.append(seq)
 
     def has_unfinished_seqs(self) -> bool:
-        logger.debug(f"Iteration: {self._iteration_id}, waiting: {self.waiting}, running: {self.running}, swapping_out: {self.swapping_out}, swapped_out: {self.swapped_out}, swapping_in: {self.swapping_in}, swapped_in: {self.swapped_in}")
-        return self.waiting or self.running or self.swapping_out or self.swapped_out or self.swapping_in or self.swapped_in
+        return self.get_num_unfinished_seqs() > 0
 
     def get_num_unfinished_seqs(self) -> int:
         return len(self.waiting) + len(self.running) + len(self.swapping_out) + len(self.swapped_out) + len(self.swapping_in) + len(self.swapped_in)
@@ -88,7 +88,7 @@ class BaseScheduler(ABC):
                 preempted_seq_ids=[],
                 begin_swap_in_seq_ids=[],
                 begin_swap_out_seq_ids=[],
-                scheduled_seq_metadata_list=[],
+                scheduled_seq_id_metadata_list=[],
             )
 
         scheduler_outputs = self._schedule()
@@ -108,6 +108,17 @@ class BaseScheduler(ABC):
         self.free_finished_seqs()
         self.num_running_batches -= 1
 
+    def mark_swap_finished(self, finished_swap_in_seq_ids: List[str], finished_swap_out_seq_ids: List[str]) -> None:
+        for seq_id in finished_swap_in_seq_ids:
+            logger.debug(f"Sequence {seq_id} has finished swapping in")
+            seq = self.swapping_in[seq_id]
+            self._finish_swap_in(seq)
+        
+        for seq_id in finished_swap_out_seq_ids:
+            logger.debug(f"Sequence {seq_id} has finished swapping out")
+            seq = self.swapping_out[seq_id]
+            self._finish_swap_out(seq)
+
     def _allocate(self, seq: Sequence) -> None:
         self.block_manager.allocate(seq)
 
@@ -118,7 +129,7 @@ class BaseScheduler(ABC):
         self,
         seq: Sequence,
     ) -> None:
-        # TODO: this was an assertion, but there's actually a one iteration delay just because of the way we refactored things
+        # NOTE: this was an assertion, but there's actually a one iteration delay just because of the way we refactored things
         # assert seq.is_executing()
         self.block_manager.append_slot(seq)
 
@@ -162,19 +173,8 @@ class BaseScheduler(ABC):
                 f"Input prompt ({seq.get_len()} tokens) is too long"
                 f" and exceeds limit of {self.prompt_limit}"
             )
-            seq.set_status(SequenceStatus.FINISHED_IGNORED, self._iteration_id)
+            seq.set_status(SequenceStatus.FINISHED_IGNORED)
             self.waiting.pop(0)
             return False
 
         return True
-
-    def mark_finished(self, finished_swap_in_seq_ids: List[str], finished_swap_out_seq_ids: List[str]) -> None:
-        for seq_id in finished_swap_in_seq_ids:
-            logger.debug(f"Sequence {seq_id} has finished swapping in")
-            seq = self.swapping_in[seq_id]
-            self._finish_swap_in(seq)
-        
-        for seq_id in finished_swap_out_seq_ids:
-            logger.debug(f"Sequence {seq_id} has finished swapping out")
-            seq = self.swapping_out[seq_id]
-            self._finish_swap_out(seq)

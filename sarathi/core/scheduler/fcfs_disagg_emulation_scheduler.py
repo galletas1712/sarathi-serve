@@ -48,7 +48,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
     def _schedule_prefills(self, running_prefills: List[Sequence], running_decodes: List[Sequence], now: float):
         running = [*running_decodes] # NOTE: running decodes, doesn't strictly have to come first in order
         ignored_seq_ids = []
-        scheduled_seq_metadata_list = []
+        scheduled_seq_id_metadata_list = []
 
         num_batched_tokens = 0
 
@@ -71,7 +71,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
 
             num_batched_tokens += next_num_prefill_tokens
             
-            scheduled_seq_metadata_list.append(
+            scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(
                     seq, prompt_chunk_len=next_num_prefill_tokens
                 )
@@ -113,7 +113,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             seq = self.waiting.pop(0)
             self._allocate(seq)
             num_batched_tokens += next_num_prefill_tokens
-            scheduled_seq_metadata_list.append(
+            scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(
                     seq, prompt_chunk_len=next_num_prefill_tokens
                 )
@@ -126,14 +126,14 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             [],
             [],
             [],
-            scheduled_seq_metadata_list
+            scheduled_seq_id_metadata_list
         )
 
     def _schedule_decodes(self, running_decodes: List[Sequence], now: float):
         running = []
         begin_swap_in_seq_ids = []
         begin_swap_out_seq_ids = []
-        scheduled_seq_metadata_list = []
+        scheduled_seq_id_metadata_list = []
 
         num_batched_tokens = 0
 
@@ -161,7 +161,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 self._append_slot(seq)
                 running.append(seq)
                 num_batched_tokens += 1
-                scheduled_seq_metadata_list.append(
+                scheduled_seq_id_metadata_list.append(
                     SequenceScheduleMetadata.from_sequence(seq)
                 )
         
@@ -183,5 +183,5 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             [],
             begin_swap_in_seq_ids,
             begin_swap_out_seq_ids,
-            scheduled_seq_metadata_list
+            scheduled_seq_id_metadata_list
         )

@@ -102,7 +102,7 @@ class SarathiScheduler(BaseScheduler):
         running: List[Sequence] = []
         ignored_seq_ids: List[str] = []
         preempted_seq_ids: List[str] = []
-        scheduled_seq_metadata_list: List[SequenceScheduleMetadata] = []
+        scheduled_seq_id_metadata_list: List[SequenceScheduleMetadata] = []
 
         num_batched_tokens: int = 0
 
@@ -155,7 +155,7 @@ class SarathiScheduler(BaseScheduler):
                 self._append_slot(seq)
                 running.append(seq)
                 num_batched_tokens += 1
-                scheduled_seq_metadata_list.append(
+                scheduled_seq_id_metadata_list.append(
                     SequenceScheduleMetadata.from_sequence(seq)
                 )
 
@@ -179,7 +179,7 @@ class SarathiScheduler(BaseScheduler):
                 continue
 
             num_batched_tokens += next_num_prefill_tokens
-            scheduled_seq_metadata_list.append(
+            scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(
                     seq, prompt_chunk_len=next_num_prefill_tokens
                 )
@@ -227,7 +227,7 @@ class SarathiScheduler(BaseScheduler):
             seq = self.waiting.pop(0)
             self._allocate(seq)
             num_batched_tokens += next_num_prefill_tokens
-            scheduled_seq_metadata_list.append(
+            scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(
                     seq, prompt_chunk_len=next_num_prefill_tokens
                 )
@@ -244,5 +244,5 @@ class SarathiScheduler(BaseScheduler):
             preempted_seq_ids=preempted_seq_ids,
             begin_swap_in_seq_ids=[],
             begin_swap_out_seq_ids=[],
-            scheduled_seq_metadata_list=scheduled_seq_metadata_list,
+            scheduled_seq_id_metadata_list=scheduled_seq_id_metadata_list,
         )

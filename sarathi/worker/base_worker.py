@@ -172,11 +172,6 @@ class BaseWorker:
     def get_model_parallel_ranks(self) -> Tuple[int, int]:
         return self.tensor_model_parallel_rank, self.pipeline_model_parallel_rank
 
-    def on_step_completed(
-        self, scheduler_outputs: SchedulerOutputs, sampler_outputs: SamplerOutputs
-    ) -> List[str]:
-        return self.seq_manager.on_step_completed(scheduler_outputs, sampler_outputs)
-
     @torch.inference_mode()
     def execute_model(
         self,
@@ -187,8 +182,10 @@ class BaseWorker:
 
         print(f"Iteration: {self.curr_batch_id}, Scheduler outputs:", scheduler_outputs)
 
-        # NOTE: on_schedule will set up block tables correspondingly
-        _, seq_metadata_list = self.seq_manager.on_schedule(scheduler_outputs)
+        # on_schedule will set up block tables, but not extract them
+        self.seq_manager.on_schedule(scheduler_outputs)
+        # This will actually extract the block tables
+        seq_metadata_list = self.seq_manager.get_seq_metadata_list()
         
         self.metrics_store.on_batch_scheduled(
             batch_id=self.curr_batch_id,
@@ -220,7 +217,7 @@ class BaseWorker:
             # print(f"Iteration: {self.curr_batch_id}, no seq_metadata_list!")
             sampler_outputs = []
 
-        finished_seq_ids = self.on_step_completed(scheduler_outputs, sampler_outputs)
+        finished_seq_ids = self.seq_manager.on_step_completed(scheduler_outputs, sampler_outputs)
 
         # print(f"Iteration: {self.curr_batch_id}, before synchronize @ end of iteration")
         torch.cuda.current_stream().synchronize()
@@ -251,7 +248,7 @@ class BaseWorker:
             if finished_swap_out_seq_ids:
                 logger.debug(f"Iteration {self.curr_batch_id}: WORKER SAID FINISHED SWAPPING OUT {finished_swap_out_seq_ids}")
 
-            self.seq_manager.mark_finished(finished_swap_in_seq_ids, finished_swap_out_seq_ids)
+            self.seq_manager.mark_swap_finished(finished_swap_in_seq_ids, finished_swap_out_seq_ids)
             self.notify_socket.send_pyobj((finished_swap_in_seq_ids, finished_swap_out_seq_ids))
 
             step_inputs = self.enqueue_socket.recv_pyobj()

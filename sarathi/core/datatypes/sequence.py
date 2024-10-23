@@ -289,13 +289,14 @@ class SequenceMetadata:
 
     Args:
         seq: The sequence object.
+        block_table: The block table for the sequence
         prompt_chunk_len: The size of the prompt chunk.
     """
 
     def __init__(
         self,
         seq: Sequence,
-        block_table: Optional[List[int]],
+        block_table: List[int],
         prompt_chunk_len: int,
     ) -> None:
         self.seq = seq

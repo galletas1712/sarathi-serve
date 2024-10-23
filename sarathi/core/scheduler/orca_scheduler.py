@@ -29,7 +29,7 @@ class OrcaScheduler(BaseScheduler):
 
     def _schedule(self) -> SchedulerOutputs:
         ignored_seq_ids: List[int] = []
-        scheduled_seq_metadata_list: List[SequenceScheduleMetadata] = []
+        scheduled_seq_id_metadata_list: List[SequenceScheduleMetadata] = []
 
         now = time.monotonic()
 
@@ -41,7 +41,7 @@ class OrcaScheduler(BaseScheduler):
 
             assert seq.prompt_stage_processing_finished
 
-            scheduled_seq_metadata_list.append(
+            scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(seq)
             )
 
@@ -69,7 +69,7 @@ class OrcaScheduler(BaseScheduler):
             seq = self.waiting.pop(0)
             self._allocate(seq)
             self.running.append(seq)
-            scheduled_seq_metadata_list.append(
+            scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(seq)
             )
 
@@ -78,5 +78,5 @@ class OrcaScheduler(BaseScheduler):
             ignored_seq_ids=ignored_seq_ids,
             preempted_seq_ids=[],
             swapped_seq_ids=[],
-            scheduled_seq_metadata_list=scheduled_seq_metadata_list,
+            scheduled_seq_id_metadata_list=scheduled_seq_id_metadata_list,
         )

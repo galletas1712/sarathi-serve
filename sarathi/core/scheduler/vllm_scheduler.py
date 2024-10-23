@@ -38,7 +38,7 @@ class VLLMScheduler(BaseScheduler):
 
         ignored_seq_ids: List[str] = []
         preempted_seq_ids: List[str] = []
-        scheduled_seq_metadata_list: List[SequenceScheduleMetadata] = []
+        scheduled_seq_id_metadata_list: List[SequenceScheduleMetadata] = []
 
         # The total number of sequences on the fly, including the
         # requests in the generation phase.
@@ -72,17 +72,17 @@ class VLLMScheduler(BaseScheduler):
             seq = self.waiting.pop(0)
             self._allocate(seq)
             num_batched_tokens += num_prompt_tokens
-            scheduled_seq_metadata_list.append(
+            scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(seq)
             )
             self.running.append(seq)
 
-        if scheduled_seq_metadata_list or ignored_seq_ids:
+        if scheduled_seq_id_metadata_list or ignored_seq_ids:
             return SchedulerOutputs(
                 id=self._iteration_id,
                 ignored_seq_ids=ignored_seq_ids,
                 preempted_seq_ids=[],
-                scheduled_seq_metadata_list=scheduled_seq_metadata_list,
+                scheduled_seq_id_metadata_list=scheduled_seq_id_metadata_list,
             )
 
         # NOTE(woosuk): Preemption happens only when there is no available slot
@@ -120,7 +120,7 @@ class VLLMScheduler(BaseScheduler):
                 # Append new slots to the sequence group.
                 self._append_slot(seq)
                 running.append(seq)
-                scheduled_seq_metadata_list.append(
+                scheduled_seq_id_metadata_list.append(
                     SequenceScheduleMetadata.from_sequence(seq)
                 )
 
@@ -130,5 +130,5 @@ class VLLMScheduler(BaseScheduler):
             id=self._iteration_id,
             ignored_seq_ids=[],
             preempted_seq_ids=preempted_seq_ids,
-            scheduled_seq_metadata_list=scheduled_seq_metadata_list,
+            scheduled_seq_id_metadata_list=scheduled_seq_id_metadata_list,
         )

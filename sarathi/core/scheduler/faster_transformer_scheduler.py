@@ -33,7 +33,7 @@ class FasterTransformerScheduler(BaseScheduler):
         return FasterTransformerBlockSpaceManager
 
     def _schedule(self) -> SchedulerOutputs:
-        scheduled_seq_metadata_list: List[SequenceScheduleMetadata] = []
+        scheduled_seq_id_metadata_list: List[SequenceScheduleMetadata] = []
 
         now = time.monotonic()
 
@@ -42,17 +42,17 @@ class FasterTransformerScheduler(BaseScheduler):
                 continue
 
             assert seq.prompt_stage_processing_finished
-            scheduled_seq_metadata_list.append(
+            scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(seq)
             )
 
-        if scheduled_seq_metadata_list:
+        if scheduled_seq_id_metadata_list:
             return SchedulerOutputs(
                 id=self._iteration_id,
                 ignored_seq_ids=[],
                 preempted_seq_ids=[],
                 swapped_seq_ids=[],
-                scheduled_seq_metadata_list=scheduled_seq_metadata_list,
+                scheduled_seq_id_metadata_list=scheduled_seq_id_metadata_list,
             )
 
         ignored_seq_ids: List[int] = []
@@ -81,7 +81,7 @@ class FasterTransformerScheduler(BaseScheduler):
             seq = self.waiting.pop(0)
             self._allocate(seq)
             self.running.append(seq)
-            scheduled_seq_metadata_list.append(
+            scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(seq)
             )
 
@@ -90,6 +90,6 @@ class FasterTransformerScheduler(BaseScheduler):
             ignored_seq_ids=ignored_seq_ids,
             preempted_seq_ids=[],
             swapped_seq_ids=[],
-            scheduled_seq_metadata_list=scheduled_seq_metadata_list,
+            scheduled_seq_id_metadata_list=scheduled_seq_id_metadata_list,
         )
         return scheduler_outputs

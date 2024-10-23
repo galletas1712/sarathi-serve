@@ -1,15 +1,13 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from sarathi.config import SystemConfig
 from sarathi.config import RollingPreemptionProfilingSchedulerConfig
-from sarathi.core.datatypes.request_output import RequestOutput
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
 from sarathi.core.datatypes.sequence import (
     SamplerOutput,
     SamplerOutputs,
     Sequence,
-    SequenceMetadata,
     SequenceScheduleMetadata,
 )
 from sarathi.core.datatypes.sequence_status import SequenceStatus
@@ -73,28 +71,16 @@ class BaseSequenceManager(ABC):
         assert seq.is_waiting() or seq.is_paused(), f"seq_id: {seq_id}, status: {seq.get_status()}"
         seq.set_status(SequenceStatus.RUNNING)
 
-    def _on_seq_scheduled(self, seq_sched_metadata: SequenceScheduleMetadata) -> None:
-        assert seq_sched_metadata.seq_id in self.seq_map
-        self._resume_seq(seq_sched_metadata.seq_id)
-
-    @abstractmethod
-    def get_gpu_block_table(self, seq: Sequence) -> List[int]:
-        pass
-
-    @abstractmethod
-    def get_cpu_block_table(self, seq: Sequence) -> List[int]:
-        pass
+    def _on_seq_scheduled(self, seq_id_metadata: SequenceScheduleMetadata) -> None:
+        assert seq_id_metadata.seq_id in self.seq_map
+        self._resume_seq(seq_id_metadata.seq_id)
 
     @synchronized
     def on_schedule(
         self,
         scheduler_outputs: SchedulerOutputs,
-    ) -> Tuple[List[Sequence], List[SequenceMetadata]]:
-        ignored_seqs: List[Sequence] = []
+    ) -> None:
         for seq_id in scheduler_outputs.ignored_seq_ids:
-            assert seq_id in self.seq_map
-            seq = self.seq_map[seq_id]
-            ignored_seqs.append(seq)
             self._free_seq(seq_id)
 
         for seq_id in scheduler_outputs.preempted_seq_ids:
@@ -106,19 +92,8 @@ class BaseSequenceManager(ABC):
         for seq_id in scheduler_outputs.begin_swap_in_seq_ids:
             self._begin_swap_in_seq(seq_id)
         
-        scheduled_seq_metadata_list: List[SequenceMetadata] = []
-        for seq_sched_metadata in scheduler_outputs.scheduled_seq_metadata_list:
-            self._on_seq_scheduled(seq_sched_metadata)  # This will call _resume_seq inside
-            seq = self.seq_map[seq_sched_metadata.seq_id]
-            scheduled_seq_metadata_list.append(
-                SequenceMetadata(
-                    seq,
-                    self.get_gpu_block_table(seq.seq_id),
-                    seq_sched_metadata.num_prompt_tokens,
-                )
-            )
-        
-        return ignored_seqs, scheduled_seq_metadata_list
+        for seq_id_metadata in scheduler_outputs.scheduled_seq_id_metadata_list:
+            self._on_seq_scheduled(seq_id_metadata)  # This will call _resume_seq inside
 
     @abstractmethod
     def _on_append_token(self, seq: Sequence) -> None:
@@ -150,16 +125,17 @@ class BaseSequenceManager(ABC):
     @synchronized
     def on_step_completed(
         self,
-        scheduler_outputs: SchedulerOutputs,
+        seq_id_metadata_list: List[SequenceScheduleMetadata],
         sampler_outputs: Optional[SamplerOutputs],
     ) -> List[str]:
         finished_seq_ids = []
 
-        for scheduled_seq_metadata, sampler_output in zip(
-            scheduler_outputs.scheduled_seq_metadata_list, sampler_outputs
+        for seq_id_metadata, sampler_output in zip(
+            seq_id_metadata_list, sampler_outputs
         ):
-            assert scheduled_seq_metadata.seq_id == sampler_output.seq_id
-            seq = self.seq_map[scheduled_seq_metadata.seq_id]
+            seq_id = seq_id_metadata.seq_id
+            assert seq_id == sampler_output.seq_id
+            seq = self.seq_map[seq_id]
             if seq.is_waiting() or seq.is_swapped_out():
                 # seq is preempted
                 # this can happen with pipeline parallel -- if the system
@@ -170,32 +146,24 @@ class BaseSequenceManager(ABC):
 
             if not seq.prompt_processing_finished:
                 seq.update_prompt_tokens_stage_processed(
-                    scheduled_seq_metadata.prompt_chunk_len
+                    seq_id_metadata.prompt_chunk_len
                 )
                 seq.update_prompt_tokens_processed(
-                    scheduled_seq_metadata.prompt_chunk_len
+                    seq_id_metadata.prompt_chunk_len
                 )
 
-            self._pause_seq(scheduled_seq_metadata.seq_id)
+            self._pause_seq(seq_id)
 
             finished = self._process_seq_output(
                 seq,
                 sampler_output,
             )
             if finished:
-                finished_seq_ids.append(seq.seq_id)
+                finished_seq_ids.append(seq_id)
         
         return finished_seq_ids
 
-    def generate_request_outputs(
-        self,
-        ignored_seqs: List[Sequence],
-        seq_metadata_list: List[SequenceMetadata],
-    ) -> List[RequestOutput]:
-        all_seqs = ignored_seqs + [x.seq for x in seq_metadata_list]
-        return [RequestOutput.from_seq(seq) for seq in all_seqs]
-
-    def mark_finished(self, finished_swap_in_seq_ids: List[str], finished_swap_out_seq_ids: List[str]) -> None:
+    def mark_swap_finished(self, finished_swap_in_seq_ids: List[str], finished_swap_out_seq_ids: List[str]) -> None:
         for seq_id in finished_swap_in_seq_ids:
             self._finish_swap_in_seq(seq_id)
         

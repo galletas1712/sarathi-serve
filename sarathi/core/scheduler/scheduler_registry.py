@@ -3,6 +3,7 @@ from sarathi.core.scheduler.faster_transformer_scheduler import (
     FasterTransformerScheduler,
 )
 from sarathi.core.scheduler.fcfs_disagg_emulation_scheduler import FCFSDisaggEmulationScheduler
+from sarathi.core.scheduler.mlfq_disagg_emulation_scheduler import MLFQDisaggEmulationScheduler
 from sarathi.core.scheduler.orca_scheduler import OrcaScheduler
 from sarathi.core.scheduler.rolling_preemption_profiling_scheduler import RollingPreemptionProfilingScheduler
 from sarathi.core.scheduler.sarathi_scheduler import SarathiScheduler
@@ -27,3 +28,4 @@ SchedulerRegistry.register(SchedulerType.SIMPLE_CHUNKING, SimpleChunkingSchedule
 SchedulerRegistry.register(SchedulerType.ROLLING_PREEMPTION_PROFILING, RollingPreemptionProfilingScheduler)
 SchedulerRegistry.register(SchedulerType.OCCASIONAL_SWAPPING, OccasionalSwappingScheduler)
 SchedulerRegistry.register(SchedulerType.FCFS_DISAGG_EMULATION, FCFSDisaggEmulationScheduler)
+SchedulerRegistry.register(SchedulerType.MLFQ_DISAGG_EMULATION, MLFQDisaggEmulationScheduler)

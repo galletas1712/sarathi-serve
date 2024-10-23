@@ -40,9 +40,3 @@ class EngineSequenceManager(BaseSequenceManager):
 
     def _on_append_token(self, seq: Sequence) -> None:
         self._decode_seq(seq)
-
-    def get_gpu_block_table(self, seq: Sequence) -> List[int]:
-        return []
-
-    def get_cpu_block_table(self, seq: Sequence) -> List[int]:
-        return []

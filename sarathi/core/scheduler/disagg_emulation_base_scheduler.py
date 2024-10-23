@@ -70,7 +70,7 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
             not self.swapped_out
         ):
             # print(f"Iteration {self._iteration_id}: scheduling prefill")
-            # NOTE: we keep decodes in memory, but don't add it to scheduled_seq_metadata list so it doesn't get run
+            # NOTE: we keep decodes in memory, but don't add it to scheduled_seq_id_metadata list so it doesn't get run
             # NOTE: _schedule_prefills should also schedule running prefills
             (
                 running,
@@ -78,10 +78,10 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
                 preempted_seq_ids,
                 begin_swap_in_seq_ids,
                 begin_swap_out_seq_ids,
-                scheduled_seq_metadata_list
+                scheduled_seq_id_metadata_list
             ) = self._schedule_prefills(running_prefills, running_decodes, now)
 
-            if scheduled_seq_metadata_list:
+            if scheduled_seq_id_metadata_list:
                 prefill_scheduled_success = True
         
         if not prefill_scheduled_success:
@@ -92,7 +92,7 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
                 preempted_seq_ids,
                 begin_swap_in_seq_ids,
                 begin_swap_out_seq_ids,
-                scheduled_seq_metadata_list
+                scheduled_seq_id_metadata_list
             ) = self._schedule_decodes(running_decodes, now)
 
         self.running = running
@@ -104,7 +104,7 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
         # print(f"Iteration {self._iteration_id} preempted: {preempted_seq_ids}")
         # print(f"Iteration {self._iteration_id} begin swap in: {begin_swap_in_seq_ids}")
         # print(f"Iteration {self._iteration_id} begin swap out: {begin_swap_out_seq_ids}")
-        # print(f"Iteration {self._iteration_id} scheduled: {scheduled_seq_metadata_list}")
+        # print(f"Iteration {self._iteration_id} scheduled: {scheduled_seq_id_metadata_list}")
 
         return SchedulerOutputs(
             id=self._iteration_id,
@@ -112,5 +112,5 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
             preempted_seq_ids=preempted_seq_ids,
             begin_swap_in_seq_ids=begin_swap_in_seq_ids,
             begin_swap_out_seq_ids=begin_swap_out_seq_ids,
-            scheduled_seq_metadata_list=scheduled_seq_metadata_list,
+            scheduled_seq_id_metadata_list=scheduled_seq_id_metadata_list,
         )

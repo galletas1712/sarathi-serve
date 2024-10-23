@@ -56,7 +56,7 @@ class OccasionalSwappingScheduler(BaseScheduler):
 
         seq_ids_to_swap_out: List[str] = []
         seq_ids_to_swap_in: List[str] = []
-        scheduled_seq_metadata_list: List[SequenceScheduleMetadata] = []
+        scheduled_seq_id_metadata_list: List[SequenceScheduleMetadata] = []
 
         num_batched_tokens: int = 0
 
@@ -115,7 +115,7 @@ class OccasionalSwappingScheduler(BaseScheduler):
                 seq = self.waiting.pop(0)
                 self._allocate(seq)  # Need to allocate since running sequence for the first time
                 num_batched_tokens += next_num_prefill_tokens
-                scheduled_seq_metadata_list.append(
+                scheduled_seq_id_metadata_list.append(
                     SequenceScheduleMetadata.from_sequence(
                         seq, prompt_chunk_len=next_num_prefill_tokens
                     )
@@ -134,7 +134,7 @@ class OccasionalSwappingScheduler(BaseScheduler):
 
                 # No need to allocate since we've already allocated memory for this sequence, and prefills are never preempted
                 num_batched_tokens += next_num_prefill_tokens
-                scheduled_seq_metadata_list.append(
+                scheduled_seq_id_metadata_list.append(
                     SequenceScheduleMetadata.from_sequence(
                         seq, prompt_chunk_len=next_num_prefill_tokens
                     )
@@ -171,7 +171,7 @@ class OccasionalSwappingScheduler(BaseScheduler):
                 self._append_slot(seq)
                 self.running.append(seq)
                 num_batched_tokens += 1
-                scheduled_seq_metadata_list.append(
+                scheduled_seq_id_metadata_list.append(
                     SequenceScheduleMetadata.from_sequence(seq)
                 )
                 logger.debug(f"(Iteration: {self._iteration_id}) Added {seq.seq_id} (decode) to running list!")
@@ -182,5 +182,5 @@ class OccasionalSwappingScheduler(BaseScheduler):
             preempted_seq_ids=[],
             begin_swap_in_seq_ids=seq_ids_to_swap_in,
             begin_swap_out_seq_ids=seq_ids_to_swap_out,
-            scheduled_seq_metadata_list=scheduled_seq_metadata_list,
+            scheduled_seq_id_metadata_list=scheduled_seq_id_metadata_list,
         )

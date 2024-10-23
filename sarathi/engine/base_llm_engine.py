@@ -252,10 +252,7 @@ class BaseLLMEngine:
     def _on_step_completed(
         self,
         scheduler_outputs: SchedulerOutputs,
-        ignored_seqs: List[SequenceMetadata],
-        seq_metadata_list: List[SequenceMetadata],
         sampler_outputs: Optional[SamplerOutputs],
-        start_time: float,
     ) -> List[RequestOutput]:
         with self._process_model_outputs_timer:
             self.seq_manager.on_step_completed(
@@ -264,10 +261,13 @@ class BaseLLMEngine:
             )
             self.scheduler.on_step_completed()
 
-        all_request_outputs = self.seq_manager.generate_request_outputs(
-            ignored_seqs, seq_metadata_list
-        )
-        return all_request_outputs
+        ignored_seqs = [self.seq_manager.seq_map[seq_id] for seq_id in scheduler_outputs.ignored_seq_ids]
+        executed_seqs = [
+            self.seq_manager.seq_map[seq_id_metadata.seq_id]
+            for seq_id_metadata in scheduler_outputs.scheduled_seq_id_metadata_list
+        ]
+
+        return [RequestOutput.from_seq(seq) for seq in ignored_seqs + executed_seqs]
 
     def get_model_config(self) -> ModelConfig:
         return self.config.model_config
@@ -355,8 +355,6 @@ class BaseLLMEngine:
         Then, it executes the model and updates the scheduler with the model outputs.
         Finally, it decodes the sequences and returns the newly generated results.
         """
-        start_time = time.perf_counter()
-
         finished_swap_in_seq_ids, finished_swap_out_seq_ids = self.notify_socket.recv_pyobj()
 
         if finished_swap_in_seq_ids:
@@ -364,8 +362,8 @@ class BaseLLMEngine:
         if finished_swap_out_seq_ids:
             logger.debug(f"Engine received finished swap out seq ids: {finished_swap_out_seq_ids}")
 
-        self.scheduler.mark_finished(finished_swap_in_seq_ids, finished_swap_out_seq_ids)
-        self.seq_manager.mark_finished(finished_swap_in_seq_ids, finished_swap_out_seq_ids)
+        self.scheduler.mark_swap_finished(finished_swap_in_seq_ids, finished_swap_out_seq_ids)
+        self.seq_manager.mark_swap_finished(finished_swap_in_seq_ids, finished_swap_out_seq_ids)
 
         with self._scheduler_timer:
             scheduler_outputs = self.scheduler.schedule()
@@ -375,9 +373,8 @@ class BaseLLMEngine:
             self.enqueue_socket.send_pyobj(None)
             return []
 
-        ignored_seqs, seq_metadata_list = self.seq_manager.on_schedule(
-            scheduler_outputs
-        )
+        # This will perform state transitions
+        self.seq_manager.on_schedule(scheduler_outputs)
 
         self.enqueue_socket.send_pyobj(
             StepInputs(
@@ -392,10 +389,7 @@ class BaseLLMEngine:
 
         return self._on_step_completed(
             scheduler_outputs,
-            ignored_seqs,
-            seq_metadata_list,
             sampler_outputs,
-            start_time,
         )
 
     def _run_workers(

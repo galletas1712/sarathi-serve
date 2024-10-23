@@ -1,6 +1,5 @@
-import enum
-import time
-from typing import List
+from typing import Dict, List
+from collections import deque
 
 from sarathi.config import (
     CacheConfig,
@@ -35,6 +34,9 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         self.policy = PolicyFactory.get_policy("mlfq")
         self.quantums = scheduler_config.get_quantums()
 
+        self.num_consecutive_iterations: Dict[str, int] = {}
+        self.queues = [deque() for _ in range(len(self.quantums))]
+
     def _get_seq_next_num_prefill_tokens(
         self, seq: Sequence, num_batched_tokens: int
     ) -> int:
@@ -49,7 +51,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
     def _schedule_prefills(self, running_prefills: List[Sequence], running_decodes: List[Sequence], now: float):
         running = [*running_decodes] # NOTE: running decodes, doesn't strictly have to come first in order
         ignored_seq_ids = []
-        scheduled_seq_metadata_list = []
+        scheduled_seq_id_metadata_list = []
 
         num_batched_tokens = 0
 
@@ -72,7 +74,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
 
             num_batched_tokens += next_num_prefill_tokens
             
-            scheduled_seq_metadata_list.append(
+            scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(
                     seq, prompt_chunk_len=next_num_prefill_tokens
                 )
@@ -114,7 +116,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             seq = self.waiting.pop(0)
             self._allocate(seq)
             num_batched_tokens += next_num_prefill_tokens
-            scheduled_seq_metadata_list.append(
+            scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(
                     seq, prompt_chunk_len=next_num_prefill_tokens
                 )
@@ -127,7 +129,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             [],
             [],
             [],
-            scheduled_seq_metadata_list
+            scheduled_seq_id_metadata_list
         )
 
     def _get_quantum(self, num_running_iterations: int):
@@ -140,11 +142,16 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         
         return quantum_idx
     
+    def add_seq(self, seq: Sequence) -> None:
+        # Add sequence groups to the waiting queue.
+        self.waiting.append(seq)
+        self.num_consecutive_iterations[seq.seq_id] = 0
+
     def _schedule_decodes(self, running_decodes: List[Sequence]):
         running = []
         begin_swap_in_seq_ids = []
         begin_swap_out_seq_ids = []
-        scheduled_seq_metadata_list = []
+        scheduled_seq_id_metadata_list = []
 
         num_batched_tokens = 0
 
@@ -172,7 +179,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 self._append_slot(seq)
                 running.append(seq)
                 num_batched_tokens += 1
-                scheduled_seq_metadata_list.append(
+                scheduled_seq_id_metadata_list.append(
                     SequenceScheduleMetadata.from_sequence(seq)
                 )
         
@@ -194,5 +201,5 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             [],
             begin_swap_in_seq_ids,
             begin_swap_out_seq_ids,
-            scheduled_seq_metadata_list
+            scheduled_seq_id_metadata_list
         )

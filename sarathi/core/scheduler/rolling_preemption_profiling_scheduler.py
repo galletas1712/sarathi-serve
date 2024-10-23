@@ -58,7 +58,7 @@ class RollingPreemptionProfilingScheduler(BaseScheduler):
         running: List[Sequence] = []
         ignored_seq_ids: List[str] = []
         preempted_seq_ids: List[str] = []
-        scheduled_seq_metadata_list: List[SequenceScheduleMetadata] = []
+        scheduled_seq_id_metadata_list: List[SequenceScheduleMetadata] = []
 
         num_batched_tokens: int = 0
 
@@ -111,7 +111,7 @@ class RollingPreemptionProfilingScheduler(BaseScheduler):
             assert next_num_prefill_tokens > 0
 
             num_batched_tokens += next_num_prefill_tokens
-            scheduled_seq_metadata_list.append(
+            scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(
                     seq, prompt_chunk_len=next_num_prefill_tokens
                 )
@@ -153,7 +153,7 @@ class RollingPreemptionProfilingScheduler(BaseScheduler):
             seq = self.waiting.pop(-1)
             self._allocate(seq)
             num_batched_tokens += next_num_prefill_tokens
-            scheduled_seq_metadata_list.append(
+            scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(
                     seq, prompt_chunk_len=next_num_prefill_tokens
                 )
@@ -176,5 +176,5 @@ class RollingPreemptionProfilingScheduler(BaseScheduler):
             ignored_seq_ids=ignored_seq_ids,
             preempted_seq_ids=preempted_seq_ids,
             swapped_seq_ids=[],
-            scheduled_seq_metadata_list=scheduled_seq_metadata_list,
+            scheduled_seq_id_metadata_list=scheduled_seq_id_metadata_list,
         )

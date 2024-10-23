@@ -61,7 +61,7 @@ class SimpleChunkingScheduler(BaseScheduler):
         running: List[Sequence] = []
         ignored_seq_ids: List[str] = []
         preempted_seq_ids: List[str] = []
-        scheduled_seq_metadata_list: List[SequenceScheduleMetadata] = []
+        scheduled_seq_id_metadata_list: List[SequenceScheduleMetadata] = []
 
         # The total number of sequences on the fly, including the
         # requests in the generation phase.
@@ -95,7 +95,7 @@ class SimpleChunkingScheduler(BaseScheduler):
 
             num_batched_tokens += next_num_prefill_tokens
             running.append(seq)
-            scheduled_seq_metadata_list.append(
+            scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(
                     seq, prompt_chunk_len=next_num_prefill_tokens
                 )
@@ -106,14 +106,14 @@ class SimpleChunkingScheduler(BaseScheduler):
             self.running = running
             running = []
 
-        if scheduled_seq_metadata_list:
+        if scheduled_seq_id_metadata_list:
             self.whose_turn = Turn.DECODE
             return SchedulerOutputs(
                 id=self._iteration_id,
                 ignored_seq_ids=ignored_seq_ids,
                 preempted_seq_ids=preempted_seq_ids,
                 swapped_seq_ids=[],
-                scheduled_seq_metadata_list=scheduled_seq_metadata_list,
+                scheduled_seq_id_metadata_list=scheduled_seq_id_metadata_list,
             )
 
         while self.waiting and self.whose_turn == Turn.PREFILL:
@@ -146,20 +146,20 @@ class SimpleChunkingScheduler(BaseScheduler):
             self._allocate(seq)
             self.running.append(seq)
             num_batched_tokens += next_num_prefill_tokens
-            scheduled_seq_metadata_list.append(
+            scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(
                     seq, prompt_chunk_len=next_num_prefill_tokens
                 )
             )
 
-        if scheduled_seq_metadata_list or ignored_seq_ids:
+        if scheduled_seq_id_metadata_list or ignored_seq_ids:
             self.whose_turn = Turn.DECODE
             return SchedulerOutputs(
                 id=self._iteration_id,
                 ignored_seq_ids=ignored_seq_ids,
                 preempted_seq_ids=preempted_seq_ids,
                 swapped_seq_ids=[],
-                scheduled_seq_metadata_list=scheduled_seq_metadata_list,
+                scheduled_seq_id_metadata_list=scheduled_seq_id_metadata_list,
             )
 
         # if we reach here it means that there were no prefills
@@ -192,7 +192,7 @@ class SimpleChunkingScheduler(BaseScheduler):
                 # Append new slots to the sequence group.
                 self._append_slot(seq)
                 running.append(seq)
-                scheduled_seq_metadata_list.append(
+                scheduled_seq_id_metadata_list.append(
                     SequenceScheduleMetadata.from_sequence(seq)
                 )
 
@@ -203,6 +203,6 @@ class SimpleChunkingScheduler(BaseScheduler):
             ignored_seq_ids=ignored_seq_ids,
             preempted_seq_ids=preempted_seq_ids,
             swapped_seq_ids=[],
-            scheduled_seq_metadata_list=scheduled_seq_metadata_list,
+            scheduled_seq_id_metadata_list=scheduled_seq_id_metadata_list,
         )
         return scheduler_outputs
