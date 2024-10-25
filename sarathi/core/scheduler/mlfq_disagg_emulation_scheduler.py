@@ -34,6 +34,8 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
 
         self.decode_queues: List[List[Sequence]] = [[] for _ in range(len(self.quantums))]
         self.request_quantum_map = {}
+        self.priorities = {}
+        self.last_iteration_ran = {}
 
     def _get_seq_next_num_prefill_tokens(
         self, seq: Sequence, num_batched_tokens: int
@@ -140,12 +142,26 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         
         return quantum_idx
     
+    def _update_priorities(self, running: List[Sequence]):
+        # NOTE: We use increments because we want to reset priorities
+        for seq in running:
+            self.priorities[seq.seq_id] += 1
+
+        for quantum_idx in range(len(self.quantums)):
+            for seq in self.decode_queues[quantum_idx]:
+                if (
+                    seq.seq_id in self.last_iteration_ran and 
+                    self.schedule_config.starvation_limit is not None and
+                    self._iteration_id - self.last_iteration_ran[seq.seq_id] > self.scheduler_config.starvation_limit
+                ):
+                    self.priorities[seq.seq_id] = 0
+
     def _update_quantums(self):
         for quantum_idx in reversed(range(len(self.quantums))):
             indices_to_remove = []
             for i in range(len(self.decode_queues[quantum_idx])):
                 seq = self.decode_queues[quantum_idx][i]
-                next_quantum = self._get_quantum(seq.get_output_len())
+                next_quantum = self._get_quantum(self.priorities[seq.seq_id])
                 if next_quantum != quantum_idx:
                     # print(f"Moving {seq.seq_id} from quantum {quantum_idx} to {next_quantum} since run count is {seq.get_output_len()}")
                     self.decode_queues[next_quantum].append(seq)
@@ -160,6 +176,8 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         if seq.seq_id in self.request_quantum_map:
             self.decode_queues[self.request_quantum_map[seq.seq_id]].remove(seq)
             del self.request_quantum_map[seq.seq_id]
+            del self.priorities[seq.seq_id]
+            del self.last_iteration_ran[seq.seq_id]
         
     def _schedule_decodes(self, running_decodes: List[Sequence], now: float):
         running = []
@@ -178,6 +196,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 quantum_idx = self._get_quantum(0)  # Always 0 quantum
                 self.decode_queues[quantum_idx].append(seq)
                 self.request_quantum_map[seq.seq_id] = quantum_idx
+                self.priorities[seq.seq_id] = 0
         
         # Here, we're sorting all of our requests in order of quantum
         queue: List[Sequence] = []
@@ -225,9 +244,12 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                     scheduled_seq_id_metadata_list.append(
                         SequenceScheduleMetadata.from_sequence(seq)
                     )
+                    self.last_iteration_ran[seq.seq_id] = self._iteration_id
                 elif seq.is_swapped_out():
                     self._begin_swap_in(seq)
                     begin_swap_in_seq_ids.append(seq.seq_id)
+        
+        self._update_priorities(running)
         
         return (
             running,

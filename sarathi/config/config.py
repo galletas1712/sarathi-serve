@@ -307,6 +307,8 @@ class MLFQDisaggEmulationSchedulerConfig(DisaggEmulationSchedulerConfig):
         default_factory=lambda: [128, 256, 512, 1024, 2048, 4096, 8192],
     )
 
+    starvation_limit: Optional[int] = 256
+
     def get_quantums(self):
         return self.quantums
     
