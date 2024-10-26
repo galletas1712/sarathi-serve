@@ -14,10 +14,15 @@ class SwapInterval:
     start_timestamp: timestamp in worker loop when the swap started
     end_timestamp: timestamp in worker right before we notify the engine that the swap has completed
     """
-    start_batch_id: int
-    start_timestamp: float
-    end_batch_id: Optional[int] = None
-    end_timestamp: Optional[float] = None
+    start_swap_out_batch_id: int
+    start_swap_out_timestamp: float
+    finish_swap_out_timestamp: Optional[float] = None
+    start_swap_in_batch_id: Optional[int] = None
+    start_swap_in_timestamp: Optional[float] = None
+    finish_swap_in_batch_id: Optional[int] = None
+    finish_swap_in_timestamp: Optional[float] = None
+    timestamp_offset: int = 0
+    batch_offset: int = 0
 
 
 @dataclass
@@ -71,42 +76,65 @@ class SequenceMetrics:
     def __init__(self, seq_id: str, arrival_timestamp: float):
         self.seq_id = seq_id
         self.arrival_timestamp = arrival_timestamp
-        self.swap_out_time_intervals = []
-        self.swap_in_time_intervals = []
-        self.batch_ids_scheduled = []
-        self.TBTs = []
+        self.swap_intervals: List[SwapInterval] = []
+        self.batch_ids_scheduled: List[int] = []
+        self.TBTs: List[float] = []
 
         self.next_tbt_offset = 0
         self.total_offset = 0
 
         # Keep track of what the current swap interval is, append later
-        self._curr_swap_interval = None
-        self._curr_swap_is_swap_in = None
-
-    def start_swap(self, batch_id: int, swap_in: bool, start_timestamp: float):
-        assert (
-            self._curr_swap_interval is None and
-            self._curr_swap_is_swap_in is None
-        )
-        self._curr_swap_interval = SwapInterval(start_batch_id=batch_id, start_timestamp=start_timestamp)
-        self._curr_swap_is_swap_in = swap_in
+        self._curr_swap_interval: Optional[SwapInterval] = None
     
-    def finish_swap(self, batch_id: int, swap_in: bool, end_timestamp: float):
-        assert (
-            self._curr_swap_interval is not None and 
-            self._curr_swap_is_swap_in == swap_in
-        )
-        self._curr_swap_interval.end_batch_id = batch_id
-        self._curr_swap_interval.end_timestamp = end_timestamp
-
-        if swap_in:
-            self.swap_in_time_intervals.append(self._curr_swap_interval)
-        else:
-            self.swap_out_time_intervals.append(self._curr_swap_interval)
-
-        self._curr_swap_interval = None
-        self._curr_swap_is_swap_in = None
+    def start_swap_out(self, batch_id: int, start_timestamp: float):
+        assert self._curr_swap_interval is None
+        self._curr_swap_interval = SwapInterval(start_swap_out_batch_id=batch_id, start_swap_out_timestamp=start_timestamp)
     
+    def finish_swap_out(self, end_timestamp: float):
+        assert (
+            self._curr_swap_interval is not None and
+            self._curr_swap_interval.start_swap_out_batch_id is not None and
+            self._curr_swap_interval.start_swap_out_timestamp is not None and
+            self._curr_swap_interval.finish_swap_out_timestamp is None and
+            self._curr_swap_interval.start_swap_in_batch_id is None and
+            self._curr_swap_interval.start_swap_in_timestamp is None and
+            self._curr_swap_interval.finish_swap_in_batch_id is None and
+            self._curr_swap_interval.finish_swap_in_timestamp is None
+        )
+        self._curr_swap_interval.finish_swap_out_timestamp = end_timestamp
+    
+    def start_swap_in(self, batch_id: int, start_timestamp: float):
+        assert (
+            self._curr_swap_interval is not None and
+            self._curr_swap_interval.start_swap_out_batch_id is not None and
+            self._curr_swap_interval.start_swap_out_timestamp is not None and
+            self._curr_swap_interval.finish_swap_out_timestamp is not None and
+            self._curr_swap_interval.start_swap_in_batch_id is None and
+            self._curr_swap_interval.start_swap_in_timestamp is None and
+            self._curr_swap_interval.finish_swap_in_batch_id is None and
+            self._curr_swap_interval.finish_swap_in_batch_id is None
+        )
+        self._curr_swap_interval.start_swap_in_batch_id = batch_id
+        self._curr_swap_interval.start_swap_in_timestamp = start_timestamp
+
+    def finish_swap_in(self, batch_id: int, end_timestamp: float):
+        assert (
+            self._curr_swap_interval is not None and
+            self._curr_swap_interval.start_swap_out_batch_id is not None and
+            self._curr_swap_interval.start_swap_out_timestamp is not None and
+            self._curr_swap_interval.finish_swap_out_timestamp is not None and
+            self._curr_swap_interval.start_swap_in_batch_id is not None and
+            self._curr_swap_interval.start_swap_in_batch_id is not None and
+            self._curr_swap_interval.start_swap_in_timestamp is not None and
+            self._curr_swap_interval.finish_swap_in_batch_id is None and
+            self._curr_swap_interval.finish_swap_in_timestamp is None
+        )
+        self._curr_swap_interval.finish_swap_in_batch_id = batch_id
+        self._curr_swap_interval.finish_swap_in_timestamp = end_timestamp
+
+        self.swap_intervals.append(self._curr_swap_interval)
+        self._curr_swap_interval = None
+
     def schedule(self, batch_id: int, scheduled_timestamp: float):
         if not self.batch_ids_scheduled:
             self.arrival_to_scheduled_delay = scheduled_timestamp - self.arrival_timestamp - self.total_offset
@@ -216,6 +244,9 @@ class WorkerMetricsStore:
                     delta = end_timestamp - max(seq_metrics_obj.arrival_timestamp, self.batch_metrics[-1].start_timestamp)
                     seq_metrics_obj.total_offset += delta
                     seq_metrics_obj.next_tbt_offset += delta
+                    if seq_metrics_obj._curr_swap_interval is not None:
+                        seq_metrics_obj._curr_swap_interval.timestamp_offset += delta
+                        seq_metrics_obj._curr_swap_interval.batch_offset += 1
                 else:
                     # TODO: maybe keep track of idle time in decode (this excludes time between prefill and first decode token)?
                     pass
@@ -235,7 +266,7 @@ class WorkerMetricsStore:
         
         self.curr_batch_is_prefill = None
     
-    def on_swap_start(self, seq_id: str, swap_in: bool, start_timestamp: float):
+    def on_swap_out_start(self, seq_id: str, start_timestamp: float):
         if not self.initial_memory_profiling_done:
             return
 
@@ -243,18 +274,37 @@ class WorkerMetricsStore:
             seq_id in self.sequence_metrics and 
             self.sequence_metrics[seq_id]._curr_swap_interval is None
         )
-        self.sequence_metrics[seq_id].start_swap(self.batch_metrics[-1].batch_id, swap_in, start_timestamp)
-
-    def on_swap_end(self, seq_id: str, swap_in: bool, end_timestamp: float):
+        self.sequence_metrics[seq_id].start_swap_out(self.batch_metrics[-1].batch_id, start_timestamp)
+    
+    def on_swap_out_end(self, seq_id: str, end_timestamp: float):
         if not self.initial_memory_profiling_done:
             return
 
         assert (
             seq_id in self.sequence_metrics and 
-            self.sequence_metrics[seq_id]._curr_swap_interval is not None and
-            self.sequence_metrics[seq_id]._curr_swap_is_swap_in == swap_in
+            self.sequence_metrics[seq_id]._curr_swap_interval is not None
         )
-        self.sequence_metrics[seq_id].finish_swap(self.batch_metrics[-1].batch_id, swap_in, end_timestamp)
+        self.sequence_metrics[seq_id].finish_swap_out(end_timestamp)
+    
+    def on_swap_in_start(self, seq_id: str, start_timestamp: float):
+        if not self.initial_memory_profiling_done:
+            return
+
+        assert (
+            seq_id in self.sequence_metrics and
+            self.sequence_metrics[seq_id]._curr_swap_interval is not None
+        )
+        self.sequence_metrics[seq_id].start_swap_in(self.batch_metrics[-1].batch_id, start_timestamp)
+
+    def on_swap_in_end(self, seq_id: str, end_timestamp: float):
+        if not self.initial_memory_profiling_done:
+            return
+
+        assert (
+            seq_id in self.sequence_metrics and 
+            self.sequence_metrics[seq_id]._curr_swap_interval is not None
+        )
+        self.sequence_metrics[seq_id].finish_swap_in(self.batch_metrics[-1].batch_id, end_timestamp)
     
     def mark_initial_memory_profiling_done(self):
         self.initial_memory_profiling_done = True
@@ -267,10 +317,14 @@ class WorkerMetricsStore:
     
     def plot(self):
         print("Sequence metrics:")
+
+        all_tbts = []
+        scheduling_delays = []
+
         for seq_metrics in self.sequence_metrics.values():
             print("Decode length:", len(seq_metrics.batch_ids_scheduled))
             print("TBT length:", len(seq_metrics.TBTs))
-            print("Min TBT:", min(seq_metrics.TBTs))
+            print("Mean TBT:", sum(seq_metrics.TBTs) / len(seq_metrics.TBTs))
             print("Max TBT:", max(seq_metrics.TBTs))
             e2e_time = (
                 self.batch_metrics[seq_metrics.batch_ids_scheduled[-1]].end_timestamp -
@@ -279,11 +333,27 @@ class WorkerMetricsStore:
            )
             print("E2E time:", e2e_time)
             print("Scheduling delay:", seq_metrics.arrival_to_scheduled_delay)
-            print("Arrived at timestamp:", seq_metrics.arrival_timestamp)
-            print("Scheduled at iteration with timestamp:", seq_metrics.batch_ids_scheduled[0], self.batch_metrics[seq_metrics.batch_ids_scheduled[0]].scheduled_timestamp)
-            print("Swap outs:", seq_metrics.swap_out_time_intervals)
-            print("Swap ins:", seq_metrics.swap_in_time_intervals)
+            # print("Arrived at timestamp:", seq_metrics.arrival_timestamp)
+            # print("Scheduled at iteration with timestamp:", seq_metrics.batch_ids_scheduled[0], self.batch_metrics[seq_metrics.batch_ids_scheduled[0]].scheduled_timestamp)
+            print("Swaps:", seq_metrics.swap_intervals)
             print()
+
+            all_tbts.extend(seq_metrics.TBTs)
+            scheduling_delays.append(seq_metrics.arrival_to_scheduled_delay)
+        
+        print("Mean TBT:", sum(all_tbts) / len(all_tbts))
+        print("Median TBT:", sorted(all_tbts)[len(all_tbts) // 2])
+        print("95% TBT:", sorted(all_tbts)[int(0.95 * len(all_tbts))])
+        print("99% TBT:", sorted(all_tbts)[int(0.99 * len(all_tbts))])
+        print("99.9% TBT:", sorted(all_tbts)[int(0.999 * len(all_tbts))])
+        print("99.99% TBT:", sorted(all_tbts)[int(0.9999 * len(all_tbts))])
+        print("Mean scheduling delay:", sum(scheduling_delays) / len(scheduling_delays))
+        print("Median scheduling delay:", sorted(scheduling_delays)[len(scheduling_delays) // 2])
+        print("95% scheduling delay:", sorted(scheduling_delays)[int(0.95 * len(scheduling_delays))])
+        print("99% scheduling delay:", sorted(scheduling_delays)[int(0.99 * len(scheduling_delays))])
+        print("99.9% scheduling delay:", sorted(scheduling_delays)[int(0.999 * len(scheduling_delays))])
+        print("99.99% scheduling delay:", sorted(scheduling_delays)[int(0.9999 * len(scheduling_delays))])
+
             # print("Total offset:", seq_metrics.total_offset)
             # print("Arrival timestamp:", seq_metrics.arrival_timestamp)
             # print("Timestamp of start batch:", self.batch_metrics[seq_metrics.batch_ids_scheduled[0]].start_timestamp)

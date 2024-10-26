@@ -105,12 +105,24 @@ class BaseBlockSpaceManager(ABC):
             block_table.append(block)
 
         self.block_tables[seq.seq_id] = {initial_device: block_table}
-
-    def can_append_slot(self, device: BlockDevice = BlockDevice.GPU) -> bool:
-        assert device == BlockDevice.GPU
+    
+    def num_blocks_allocated(self, seq_id: str, device: BlockDevice) -> int:
+        return len(self.block_tables[seq_id][device])
+    
+    def num_blocks_remaining_after(self, num_required_blocks: int, device: BlockDevice = BlockDevice.GPU, use_watermark: bool = True) -> int:
         num_free_blocks = self.allocators[device].get_num_free_blocks()
-        return num_free_blocks > 0
-
+        return num_free_blocks - (self.watermark_blocks if use_watermark else 0) - num_required_blocks
+    
+    def can_append_slot(self, seq: Sequence, device: BlockDevice = BlockDevice.GPU) -> bool:
+        assert device == BlockDevice.GPU
+        logical_blocks = seq.logical_token_blocks
+        block_table_len = self.num_blocks_allocated(seq.seq_id, device)
+        assert len(logical_blocks) - block_table_len <= 1
+        return self.num_blocks_remaining_after(
+            num_required_blocks=1 if block_table_len < len(logical_blocks) else 0,
+            device=device
+        ) >= 0
+    
     def append_slot(self, seq: Sequence, device: BlockDevice = BlockDevice.GPU) -> None:
         """Allocate a physical slot for a new token."""
         assert device == BlockDevice.GPU
@@ -120,7 +132,7 @@ class BaseBlockSpaceManager(ABC):
         if len(block_table) < len(logical_blocks):
             # The sequence has a new logical block.
             # Allocate a new physical block.
-            assert self.can_append_slot(device)
+            assert self.can_append_slot(seq, device)
             block = self.allocators[device].allocate()
             block_table.append(block)
 
@@ -162,9 +174,8 @@ class BaseBlockSpaceManager(ABC):
         assert seq_id in self.block_tables
         assert BlockDevice.GPU not in self.block_tables[seq_id] and BlockDevice.CPU in self.block_tables[seq_id]
 
-        num_free_blocks = self.allocators[BlockDevice.GPU].get_num_free_blocks()
-        num_required_blocks = len(self.block_tables[seq_id][BlockDevice.CPU])
-        return num_free_blocks - num_required_blocks >= self.watermark_blocks
+        num_required_blocks = self.num_blocks_allocated(seq_id, BlockDevice.CPU)
+        return self.num_blocks_remaining_after(num_required_blocks, BlockDevice.GPU) >= 0
     
     def begin_swap_in(self, seq_id: str):
         assert self.can_swap_in(seq_id)
@@ -188,11 +199,10 @@ class BaseBlockSpaceManager(ABC):
         assert seq_id in self.block_tables
         assert BlockDevice.CPU not in self.block_tables[seq_id] and BlockDevice.GPU in self.block_tables[seq_id]
 
-        num_free_blocks = self.allocators[BlockDevice.CPU].get_num_free_blocks()
-        num_required_blocks = len(self.block_tables[seq_id][BlockDevice.GPU])
-        return num_free_blocks - num_required_blocks >= 0  # NOTE: We don't use watermark for CPU
+        num_required_blocks = self.num_blocks_allocated(seq_id, BlockDevice.GPU)
+        return self.num_blocks_remaining_after(num_required_blocks, BlockDevice.CPU, use_watermark=False) >= 0
     
-    def begin_swap_out(self, seq_id: str):
+    def swap_out(self, seq_id: str):
         assert self.can_swap_out(seq_id)
 
         self.block_tables[seq_id][BlockDevice.CPU] = []
@@ -204,12 +214,8 @@ class BaseBlockSpaceManager(ABC):
             self.block_tables[seq_id][BlockDevice.CPU].append(cpu_block)
         
         self.swap_out_mapping[seq_id] = swap_out_mapping
-        # print(f"Begin swap out {seq_id} {list(self.block_tables.keys())}")
-    
-    def finish_swap_out(self, seq_id: str):
         self._free_device_blocks(seq_id, BlockDevice.GPU)
-        # print(f"Finish swap out {seq_id} {list(self.block_tables.keys())}")
-
+    
     def get_swap_in_mapping(self, seq_id: str) -> List[int]:
         return self.swap_in_mapping[seq_id]
     

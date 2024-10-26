@@ -119,10 +119,10 @@ class ZipfRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
         default=512, metadata={"help": "Minimum number of tokens."}
     )
     max_tokens: int = field(
-        default=8192, metadata={"help": "Maximum number of tokens."}
+        default=4096, metadata={"help": "Maximum number of tokens."}
     )
     prefill_to_decode_ratio: float = field(
-        default=0.2, metadata={"help": "Ratio of prefill tokens to decode tokens."}
+        default=0.5, metadata={"help": "Ratio of prefill tokens to decode tokens."}
     )
 
     @staticmethod
@@ -177,7 +177,7 @@ class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
         default_factory=PoissonRequestIntervalGeneratorConfig
     )
     num_requests: int = field(
-        default=256, metadata={"help": "Number of requests to generate."}
+        default=64, metadata={"help": "Number of requests to generate."}
     )
     duration: float = field(
         default=None, metadata={"help": "Duration of the synthetic request generation."}

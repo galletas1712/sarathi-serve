@@ -32,15 +32,7 @@ class SequenceState:
         if not (
             status == SequenceStatus.FINISHED_STOPPED
             or status == SequenceStatus.FINISHED_LENGTH_CAPPED
-        ) and status != SequenceStatus.RUNNING and status != SequenceStatus.WAITING and status != SequenceStatus.SWAPPING_OUT:
-            raise ValueError(
-                f"Invalid state transition from {self._status} to {status} for request {self._id}."
-            )
-
-    def _handle_transitions_from_swapping_out_status(
-        self, current_time: float, status: SequenceStatus, **kwargs
-    ) -> None:
-        if status != SequenceStatus.SWAPPED_OUT:
+        ) and status != SequenceStatus.RUNNING and status != SequenceStatus.WAITING and status != SequenceStatus.SWAPPED_OUT:
             raise ValueError(
                 f"Invalid state transition from {self._status} to {status} for request {self._id}."
             )
@@ -72,8 +64,6 @@ class SequenceState:
             self._handle_transitions_from_paused_status(current_time, status, **kwargs)
         elif self._status == SequenceStatus.SWAPPED_OUT:
             self._handle_transitions_from_swapped_status(current_time, status, **kwargs)
-        elif self._status == SequenceStatus.SWAPPING_OUT:
-            self._handle_transitions_from_swapping_out_status(current_time, status, **kwargs)
         elif self._status == SequenceStatus.SWAPPING_IN:
             self._handle_transitions_from_swapping_in_status(current_time, status, **kwargs)
         else:

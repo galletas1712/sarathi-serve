@@ -180,8 +180,6 @@ class BaseWorker:
         # NOTE: not synchronizing at the top because we already did at the bottom
         self.metrics_store.on_batch_start(batch_id=self.curr_batch_id)
 
-        print(f"Iteration: {self.curr_batch_id}, Scheduler outputs:", scheduler_outputs)
-
         # on_schedule will set up block tables, but not extract them
         self.seq_manager.on_schedule(scheduler_outputs)
         # This will actually extract the block tables
@@ -193,16 +191,26 @@ class BaseWorker:
         )
 
         # NOTE: Ordering of which ones are swapped out first
-        swap_out_mappings = self.seq_manager.get_swap_out_mappings(scheduler_outputs.begin_swap_out_seq_ids)
+        swap_out_mappings = self.seq_manager.get_swap_out_mappings(scheduler_outputs.swap_out_seq_ids)
         swap_in_mappings = self.seq_manager.get_swap_in_mappings(scheduler_outputs.begin_swap_in_seq_ids)
 
+        # Perform sync swap out
         now = time.perf_counter()
-        for seq_id, _ in swap_out_mappings.items():
-            self.metrics_store.on_swap_start(seq_id, swap_in=False, start_timestamp=now)
-        for seq_id, _ in swap_in_mappings.items():
-            self.metrics_store.on_swap_start(seq_id, swap_in=True, start_timestamp=now)
+        for seq_id in swap_out_mappings.keys():
+            self.metrics_store.on_swap_out_start(seq_id, start_timestamp=now)
 
-        self.cache_engine.begin_swap_out(swap_out_mappings)
+        # This will wait for swap outs to finish
+        self.cache_engine.swap_out(swap_out_mappings)
+
+        now = time.perf_counter()
+        for seq_id in swap_out_mappings.keys():
+            self.metrics_store.on_swap_out_end(seq_id, end_timestamp=now)
+
+        # Perform async swap in after sync swap out
+        now = time.perf_counter()
+        for seq_id in swap_in_mappings.keys():
+            self.metrics_store.on_swap_in_start(seq_id, start_timestamp=now)
+
         self.cache_engine.begin_swap_in(swap_in_mappings)
 
         if seq_metadata_list:
@@ -235,21 +243,17 @@ class BaseWorker:
 
         while True:
             logger.debug(f"Iteration: {self.curr_batch_id}")
-            finished_swap_in_seq_ids, finished_swap_out_seq_ids = self.cache_engine.pop_finished()
+            finished_swap_in_seq_ids = self.cache_engine.pop_finished_swap_ins()
 
             now = time.perf_counter()
             for seq_id in finished_swap_in_seq_ids:
-                self.metrics_store.on_swap_end(seq_id, swap_in=True, end_timestamp=now)
-            for seq_id in finished_swap_out_seq_ids:
-                self.metrics_store.on_swap_end(seq_id, swap_in=False, end_timestamp=now)
+                self.metrics_store.on_swap_in_end(seq_id, end_timestamp=now)
 
             if finished_swap_in_seq_ids:
                 logger.debug(f"Iteration {self.curr_batch_id}: WORKER SAID FINISHED SWAPPING IN {finished_swap_in_seq_ids}")
-            if finished_swap_out_seq_ids:
-                logger.debug(f"Iteration {self.curr_batch_id}: WORKER SAID FINISHED SWAPPING OUT {finished_swap_out_seq_ids}")
 
-            self.seq_manager.mark_swap_finished(finished_swap_in_seq_ids, finished_swap_out_seq_ids)
-            self.notify_socket.send_pyobj((finished_swap_in_seq_ids, finished_swap_out_seq_ids))
+            self.seq_manager.mark_swap_in_finished(finished_swap_in_seq_ids)
+            self.notify_socket.send_pyobj(finished_swap_in_seq_ids)
 
             step_inputs = self.enqueue_socket.recv_pyobj()
 

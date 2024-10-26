@@ -9,7 +9,6 @@ class SequenceStatus(enum.Enum):
     RUNNING = enum.auto()
     PAUSED = enum.auto()
     SWAPPING_IN = enum.auto()
-    SWAPPING_OUT = enum.auto()
     SWAPPED_OUT = enum.auto()
     FINISHED_STOPPED = enum.auto()
     FINISHED_LENGTH_CAPPED = enum.auto()
@@ -37,10 +36,6 @@ class SequenceStatus(enum.Enum):
     @staticmethod
     def is_swapping_in(status: "SequenceStatus") -> bool:
         return status == SequenceStatus.SWAPPING_IN
-    
-    @staticmethod
-    def is_swapping_out(status: "SequenceStatus") -> bool:
-        return status == SequenceStatus.SWAPPING_OUT
     
     @staticmethod
     def is_swapped_out(status: "SequenceStatus") -> bool:

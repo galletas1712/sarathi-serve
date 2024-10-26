@@ -355,15 +355,13 @@ class BaseLLMEngine:
         Then, it executes the model and updates the scheduler with the model outputs.
         Finally, it decodes the sequences and returns the newly generated results.
         """
-        finished_swap_in_seq_ids, finished_swap_out_seq_ids = self.notify_socket.recv_pyobj()
+        finished_swap_in_seq_ids = self.notify_socket.recv_pyobj()
 
         if finished_swap_in_seq_ids:
             logger.debug(f"Engine received finished swap in seq ids: {finished_swap_in_seq_ids}")
-        if finished_swap_out_seq_ids:
-            logger.debug(f"Engine received finished swap out seq ids: {finished_swap_out_seq_ids}")
 
-        self.scheduler.mark_swap_finished(finished_swap_in_seq_ids, finished_swap_out_seq_ids)
-        self.seq_manager.mark_swap_finished(finished_swap_in_seq_ids, finished_swap_out_seq_ids)
+        self.scheduler.mark_swap_in_finished(finished_swap_in_seq_ids)
+        self.seq_manager.mark_swap_in_finished(finished_swap_in_seq_ids)
 
         with self._scheduler_timer:
             scheduler_outputs = self.scheduler.schedule()
@@ -372,6 +370,15 @@ class BaseLLMEngine:
             # Need to send to worker because it's expecting something
             self.enqueue_socket.send_pyobj(None)
             return []
+
+        print(f"Iteration: {self.scheduler._iteration_id}")
+        for i, seqs in enumerate(self.scheduler.decode_queues):
+           print(f"Decode queue: {[seq.seq_id for seq in seqs]}")
+        print(f"Running: {[meta.seq_id for meta in scheduler_outputs.scheduled_seq_id_metadata_list]}")
+        if scheduler_outputs.swap_out_seq_ids:
+            print(f"Swap out: {scheduler_outputs.swap_out_seq_ids}")
+        if scheduler_outputs.begin_swap_in_seq_ids:
+            print(f"Begin swap in: {scheduler_outputs.begin_swap_in_seq_ids}")
 
         # This will perform state transitions
         self.seq_manager.on_schedule(scheduler_outputs)

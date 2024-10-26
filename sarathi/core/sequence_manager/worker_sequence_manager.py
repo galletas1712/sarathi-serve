@@ -42,18 +42,14 @@ class WorkerSequenceManager(BaseSequenceManager):
     def _begin_swap_in_seq(self, seq_id: str) -> None:
         super()._begin_swap_in_seq(seq_id)
         self.block_manager.begin_swap_in(seq_id)
-    
-    def _begin_swap_out_seq(self, seq_id: str) -> None:
-        super()._begin_swap_out_seq(seq_id)
-        self.block_manager.begin_swap_out(seq_id)
-    
+
     def _finish_swap_in_seq(self, seq_id: str) -> None:
         super()._finish_swap_in_seq(seq_id)
         self.block_manager.finish_swap_in(seq_id)
     
-    def _finish_swap_out_seq(self, seq_id: str) -> None:
-        super()._finish_swap_out_seq(seq_id)
-        self.block_manager.finish_swap_out(seq_id)
+    def _swap_out_seq(self, seq_id: str) -> None:
+        super()._swap_out_seq(seq_id)
+        self.block_manager.swap_out(seq_id)
     
     def _on_seq_scheduled(self, seq_id_metadata: SequenceScheduleMetadata) -> None:
         assert seq_id_metadata.seq_id in self.seq_map
@@ -65,7 +61,6 @@ class WorkerSequenceManager(BaseSequenceManager):
             assert self.block_manager.can_allocate(seq, BlockDevice.GPU)
             self.block_manager.allocate(seq, BlockDevice.GPU)
         elif not seq_id_metadata.is_prompt:
-            self.block_manager.can_append_slot(BlockDevice.GPU)
             self.block_manager.append_slot(seq, BlockDevice.GPU)
         
         # NOTE: Here, we assume that in chunked prefill mode, the full sequence is allocated,

@@ -39,10 +39,7 @@ class CacheEngine:
         self.gpu_cache = self._allocate_kv_cache(self.num_gpu_blocks, "cuda")
         self.cpu_cache = self._allocate_kv_cache(self.num_cpu_blocks, "cpu")
 
-        self.finish_swap_out_events = {}
         self.finish_swap_in_events = {}
-
-        self.swap_out_stream = torch.cuda.Stream()
         self.swap_in_stream = torch.cuda.Stream()
 
     def _allocate_kv_cache(
@@ -62,36 +59,20 @@ class CacheEngine:
                 )
         return kv_cache
     
-    def _begin_swap(self, swap_mapping: Dict[str, List[Tuple[int, int]]], swap_in: bool) -> None:
-        for seq_id, src_to_dst in swap_mapping.items():
-            src_to_dst = torch.tensor(src_to_dst, dtype=torch.int64, device="cpu")
-            finish_event = torch.cuda.Event()
-            for i in range(self.num_layers):
-                if swap_in:
-                    get_attention_wrapper().swap_blocks(self.cpu_cache[i], self.gpu_cache[i],
-                                                src_to_dst)
-                else:
-                    get_attention_wrapper().swap_blocks(self.gpu_cache[i], self.cpu_cache[i],
-                                                src_to_dst)
-            finish_event.record()
-            if swap_in:
-                self.finish_swap_in_events[seq_id] = finish_event
-            else:
-                self.finish_swap_out_events[seq_id] = finish_event
-
     def begin_swap_in(self, swap_mapping: Dict[str, List[Tuple[int, int]]]) -> None:
         with torch.cuda.stream(self.swap_in_stream):
-            self._begin_swap(swap_mapping, swap_in=True)
+            for seq_id, src_to_dst in swap_mapping.items():
+                src_to_dst = torch.tensor(src_to_dst, dtype=torch.int64, device="cpu")
+                finish_event = torch.cuda.Event()
+                for i in range(self.num_layers):
+                    get_attention_wrapper().swap_blocks(self.cpu_cache[i], self.gpu_cache[i],
+                                                src_to_dst)
+                finish_event.record()
+                self.finish_swap_in_events[seq_id] = finish_event
 
-    def begin_swap_out(self, src_to_dst: List[Tuple[int, int]]) -> torch.cuda.Event:
-        with torch.cuda.stream(self.swap_out_stream):
-            self._begin_swap(src_to_dst, swap_in=False)
-
-    def pop_finished(self) -> Tuple[List[str], List[str]]:
+    def pop_finished_swap_ins(self) -> Tuple[List[str], List[str]]:
         finished_swap_in_seq_ids = []
-        finished_swap_out_seq_ids = []
         logger.debug(f"Swap in events: {list(self.finish_swap_in_events.items())}")
-        logger.debug(f"Swap out events: {list(self.finish_swap_out_events.items())}")
 
         for seq_id, event in self.finish_swap_in_events.items():
             if event.query():
@@ -102,17 +83,18 @@ class CacheEngine:
         for seq_id in finished_swap_in_seq_ids:
             del self.finish_swap_in_events[seq_id]
 
-        for seq_id, event in self.finish_swap_out_events.items():
-            if event.query():
-                finished_swap_out_seq_ids.append(seq_id)
-            else:
-                logger.debug(f"Event for swap out {seq_id} not done")
-        
-        for seq_id in finished_swap_out_seq_ids:
-            del self.finish_swap_out_events[seq_id]
-        
-        return finished_swap_in_seq_ids, finished_swap_out_seq_ids
+        return finished_swap_in_seq_ids
 
+    def swap_out(self, swap_mapping: Dict[str, List[Tuple[int, int]]]) -> None:
+        finish_event = torch.cuda.Event()
+        for _, src_to_dst in swap_mapping.items():
+            src_to_dst = torch.tensor(src_to_dst, dtype=torch.int64, device="cpu")
+            for i in range(self.num_layers):
+                get_attention_wrapper().swap_blocks(self.gpu_cache[i], self.cpu_cache[i],
+                                            src_to_dst)
+        finish_event.record()
+        finish_event.synchronize()
+        
     @staticmethod
     def get_cache_block_size(
         block_size: int,

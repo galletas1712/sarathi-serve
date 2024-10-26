@@ -52,7 +52,6 @@ class BaseScheduler(ABC):
         # Sequence groups in the RUNNING state.
         self.running: List[Sequence] = []
 
-        self.swapping_out: Dict[str, Sequence] = {}
         self.swapped_out: Dict[str, Sequence] = {}
         self.swapping_in: Dict[str, Sequence] = {}
         self.swapped_in: Dict[str, Sequence] = {}
@@ -70,7 +69,7 @@ class BaseScheduler(ABC):
         return self.get_num_unfinished_seqs() > 0
 
     def get_num_unfinished_seqs(self) -> int:
-        return len(self.waiting) + len(self.running) + len(self.swapping_out) + len(self.swapped_out) + len(self.swapping_in) + len(self.swapped_in)
+        return len(self.waiting) + len(self.running) + len(self.swapped_out) + len(self.swapping_in) + len(self.swapped_in)
 
     @abstractmethod
     def _schedule(self) -> SchedulerOutputs:
@@ -87,8 +86,8 @@ class BaseScheduler(ABC):
                 self._iteration_id,
                 ignored_seq_ids=[],
                 preempted_seq_ids=[],
+                swap_out_seq_ids=[],
                 begin_swap_in_seq_ids=[],
-                begin_swap_out_seq_ids=[],
                 scheduled_seq_id_metadata_list=[],
             )
 
@@ -109,17 +108,12 @@ class BaseScheduler(ABC):
         self.free_finished_seqs()
         self.num_running_batches -= 1
 
-    def mark_swap_finished(self, finished_swap_in_seq_ids: List[str], finished_swap_out_seq_ids: List[str]) -> None:
+    def mark_swap_in_finished(self, finished_swap_in_seq_ids: List[str]) -> None:
         for seq_id in finished_swap_in_seq_ids:
             logger.debug(f"Sequence {seq_id} has finished swapping in")
             seq = self.swapping_in[seq_id]
             self._finish_swap_in(seq)
         
-        for seq_id in finished_swap_out_seq_ids:
-            logger.debug(f"Sequence {seq_id} has finished swapping out")
-            seq = self.swapping_out[seq_id]
-            self._finish_swap_out(seq)
-
     def _allocate(self, seq: Sequence) -> None:
         self.block_manager.allocate(seq)
 
@@ -154,20 +148,14 @@ class BaseScheduler(ABC):
         self.swapped_in[seq.seq_id] = seq
         self.block_manager.finish_swap_in(seq.seq_id)
     
-    def _begin_swap_out(self, seq: Sequence) -> None:
+    def _swap_out(self, seq: Sequence) -> None:
         assert seq.is_executing()
         if seq.seq_id in self.swapped_in:
             logger.warning(f"Sequence {seq.seq_id} to swap in was recently swapped out and not yet made progress")
             del self.swapped_in[seq.seq_id]  # NOTE: Maybe we didn't remove from swapped_in queue properly
-        self.swapping_out[seq.seq_id] = seq
-        self.block_manager.begin_swap_out(seq.seq_id)
-    
-    def _finish_swap_out(self, seq: Sequence) -> None:
-        assert seq.is_swapping_out()
-        del self.swapping_out[seq.seq_id]
+        self.block_manager.swap_out(seq.seq_id)
         self.swapped_out[seq.seq_id] = seq
-        self.block_manager.finish_swap_out(seq.seq_id)
-
+    
     def _check_request_prompt_length(self, seq: Sequence) -> bool:
         if seq.get_len() > self.prompt_limit:
             logger.warning(

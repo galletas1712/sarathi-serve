@@ -41,16 +41,10 @@ class BaseSequenceManager(ABC):
         assert seq.is_executing()
         seq.reset_for_recompute()
 
-    def _begin_swap_out_seq(self, seq_id: str) -> None:
+    def _swap_out_seq(self, seq_id: str) -> None:
         assert seq_id in self.seq_map
         seq = self.seq_map[seq_id]
         assert seq.is_executing(), f"seq_id: {seq_id}, status: {seq.get_status()}"
-        seq.set_status(SequenceStatus.SWAPPING_OUT)
-    
-    def _finish_swap_out_seq(self, seq_id: str) -> None:
-        assert seq_id in self.seq_map
-        seq = self.seq_map[seq_id]
-        assert seq.is_swapping_out(), f"seq_id: {seq_id}, status: {seq.get_status()}"
         seq.set_status(SequenceStatus.SWAPPED_OUT)
     
     def _begin_swap_in_seq(self, seq_id: str) -> None:
@@ -92,8 +86,8 @@ class BaseSequenceManager(ABC):
         for seq_id in scheduler_outputs.preempted_seq_ids:
             self._preempt_seq(seq_id)
         
-        for seq_id in scheduler_outputs.begin_swap_out_seq_ids:
-            self._begin_swap_out_seq(seq_id)
+        for seq_id in scheduler_outputs.swap_out_seq_ids:
+            self._swap_out_seq(seq_id)
         
         for seq_id in scheduler_outputs.begin_swap_in_seq_ids:
             self._begin_swap_in_seq(seq_id)
@@ -169,9 +163,6 @@ class BaseSequenceManager(ABC):
         
         return finished_seq_ids
 
-    def mark_swap_finished(self, finished_swap_in_seq_ids: List[str], finished_swap_out_seq_ids: List[str]) -> None:
+    def mark_swap_in_finished(self, finished_swap_in_seq_ids: List[str]) -> None:
         for seq_id in finished_swap_in_seq_ids:
             self._finish_swap_in_seq(seq_id)
-        
-        for seq_id in finished_swap_out_seq_ids:
-            self._finish_swap_out_seq(seq_id)

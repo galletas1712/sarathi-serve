@@ -65,7 +65,6 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
         # TODO: implement keeping KV cache resident in CPU memory always to mitigate potential issues with this
         # Schedule prefill!
         if (
-            not self.swapping_out and
             not self.swapping_in and
             not self.swapped_out
         ):
@@ -76,8 +75,8 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
                 running,
                 ignored_seq_ids,
                 preempted_seq_ids,
+                swap_out_seq_ids,
                 begin_swap_in_seq_ids,
-                begin_swap_out_seq_ids,
                 scheduled_seq_id_metadata_list
             ) = self._schedule_prefills(running_prefills, running_decodes, now)
 
@@ -90,27 +89,29 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
                 running,
                 ignored_seq_ids,
                 preempted_seq_ids,
+                swap_out_seq_ids,
                 begin_swap_in_seq_ids,
-                begin_swap_out_seq_ids,
                 scheduled_seq_id_metadata_list
             ) = self._schedule_decodes(running_decodes, now)
 
         self.running = running
         self.running = self.policy.sort_by_priority(now, self.running)
         self.waiting = self.policy.sort_by_priority(now, self.waiting)
+        print("Number of waiting requests: ", len(self.waiting))
+        print(f"Swapped out: {len(self.swapped_out)}, Swapped in: {len(self.swapped_in)}, Swapping in: {len(self.swapping_in)}")
 
         # print(f"Iteration {self._iteration_id} running: {running}")
         # print(f"Iteration {self._iteration_id} ignored: {ignored_seq_ids}")
         # print(f"Iteration {self._iteration_id} preempted: {preempted_seq_ids}")
+        # print(f"Iteration {self._iteration_id} swap out: {swap_out_seq_ids}")
         # print(f"Iteration {self._iteration_id} begin swap in: {begin_swap_in_seq_ids}")
-        # print(f"Iteration {self._iteration_id} begin swap out: {begin_swap_out_seq_ids}")
         # print(f"Iteration {self._iteration_id} scheduled: {scheduled_seq_id_metadata_list}")
 
         return SchedulerOutputs(
             id=self._iteration_id,
             ignored_seq_ids=ignored_seq_ids,
             preempted_seq_ids=preempted_seq_ids,
+            swap_out_seq_ids=swap_out_seq_ids,
             begin_swap_in_seq_ids=begin_swap_in_seq_ids,
-            begin_swap_out_seq_ids=begin_swap_out_seq_ids,
             scheduled_seq_id_metadata_list=scheduled_seq_id_metadata_list,
         )

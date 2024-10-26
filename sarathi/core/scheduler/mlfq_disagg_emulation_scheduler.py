@@ -1,19 +1,14 @@
+import copy
 from typing import Dict, List
 
 from sarathi.config import (
     CacheConfig,
     ModelConfig,
     ParallelConfig,
-    SarathiSchedulerConfig,
+    MLFQDisaggEmulationSchedulerConfig
 )
-from sarathi.config.config import MLFQDisaggEmulationSchedulerConfig
 from sarathi.core.block_space_manager.base_block_space_manager import BlockDevice
-from sarathi.core.block_space_manager.sarathi_block_space_manager import (
-    SarathiBlockSpaceManager,
-)
-from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
 from sarathi.core.datatypes.sequence import Sequence, SequenceScheduleMetadata
-from sarathi.core.policy import PolicyFactory
 from sarathi.core.scheduler.disagg_emulation_base_scheduler import DisaggEmulationBaseScheduler
 from sarathi.logger import init_logger
 
@@ -151,7 +146,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             for seq in self.decode_queues[quantum_idx]:
                 if (
                     seq.seq_id in self.last_iteration_ran and 
-                    self.schedule_config.starvation_limit is not None and
+                    self.scheduler_config.starvation_limit is not None and
                     self._iteration_id - self.last_iteration_ran[seq.seq_id] > self.scheduler_config.starvation_limit
                 ):
                     self.priorities[seq.seq_id] = 0
@@ -181,8 +176,8 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         
     def _schedule_decodes(self, running_decodes: List[Sequence], now: float):
         running = []
+        swap_out_seq_ids = []
         begin_swap_in_seq_ids = []
-        begin_swap_out_seq_ids = []
         scheduled_seq_id_metadata_list = []
         num_batched_tokens = 0
 
@@ -207,20 +202,22 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             seq = queue.pop(0)
 
             if not seq.is_paused() and not seq.is_swapped_out():
-                assert seq.is_swapping_out() or seq.is_swapping_in()
+                assert seq.is_swapping_in()
                 continue
+        
+            # NOTE: We'll manually modify this number, but this is just prefetching
+            if seq.is_paused():
+                # Append
+                num_required_blocks = len(seq.logical_token_blocks) - self.block_manager.num_blocks_allocated(seq.seq_id, BlockDevice.GPU)
+                assert num_required_blocks == 0 or num_required_blocks == 1
+            else:
+                # Swap in
+                num_required_blocks = self.block_manager.num_blocks_allocated(seq.seq_id, BlockDevice.CPU)
 
-            def can_schedule():
-                if seq.is_paused():
-                    return self.block_manager.can_append_slot()
-                elif seq.is_swapped_out():
-                    return self.block_manager.can_swap_in(seq.seq_id)
-                else:
-                    raise ValueError(f"Invalid sequence status: {seq.get_status()}")
-
-            while not can_schedule():
+            victim_seqs = []
+            victim_idx = len(queue) - 1
+            while num_required_blocks > 0 and self.block_manager.num_blocks_remaining_after(num_required_blocks) < 0:
                 # Need to search for the lowest priority sequence actually running
-                victim_idx = len(queue) - 1
                 while victim_idx >= 0:
                     if queue[victim_idx].is_paused():
                         break
@@ -228,34 +225,46 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
 
                 if victim_idx >= 0:
                     victim_seq = queue.pop(victim_idx)
-                    self._begin_swap_out(victim_seq)
-                    begin_swap_out_seq_ids.append(victim_seq.seq_id)
+
+                    num_required_blocks -= len(victim_seq.logical_token_blocks)
+                    num_required_blocks = max(0, num_required_blocks)
+
+                    victim_seqs.append(victim_seq)
+                    victim_idx -= 1
                 else:
-                    if seq.is_paused():
-                        self._begin_swap_out(seq)
-                        begin_swap_out_seq_ids.append(seq.seq_id)
                     break
-            else:
-                if seq.is_paused():
-                    # Append new slots to the sequence group.
-                    self._append_slot(seq)
-                    running.append(seq)
-                    num_batched_tokens += 1
-                    scheduled_seq_id_metadata_list.append(
-                        SequenceScheduleMetadata.from_sequence(seq)
-                    )
-                    self.last_iteration_ran[seq.seq_id] = self._iteration_id
-                elif seq.is_swapped_out():
-                    self._begin_swap_in(seq)
-                    begin_swap_in_seq_ids.append(seq.seq_id)
         
+            if num_required_blocks > 0 and self.block_manager.num_blocks_remaining_after(num_required_blocks) < 0:
+                break
+
+            for victim_seq in victim_seqs:
+                print(f"Iteration {self._iteration_id}: Swapping out {victim_seq.seq_id} to make room for {seq.seq_id}")
+                self._swap_out(victim_seq)
+                swap_out_seq_ids.append(victim_seq.seq_id)
+
+            if seq.is_paused():
+                print(f"Iteration {self._iteration_id}: Scheduling {seq.seq_id}")
+                # Append new slots to the sequence group.
+                self._append_slot(seq)
+                running.append(seq)
+                num_batched_tokens += 1
+                scheduled_seq_id_metadata_list.append(
+                    SequenceScheduleMetadata.from_sequence(seq)
+                )
+                self.last_iteration_ran[seq.seq_id] = self._iteration_id
+            elif seq.is_swapped_out():
+                print(f"Iteration {self._iteration_id}: Swapping in {seq.seq_id}")
+                assert self.block_manager.can_swap_in(seq.seq_id)
+                self._begin_swap_in(seq)
+                begin_swap_in_seq_ids.append(seq.seq_id)
+
         self._update_priorities(running)
         
         return (
             running,
             [],
             [],
+            swap_out_seq_ids,
             begin_swap_in_seq_ids,
-            begin_swap_out_seq_ids,
             scheduled_seq_id_metadata_list
         )

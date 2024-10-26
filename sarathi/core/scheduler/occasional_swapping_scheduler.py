@@ -159,7 +159,7 @@ class OccasionalSwappingScheduler(BaseScheduler):
             for seq in running_decodes:
                 # Swap out every last iteration (starting from the first decode iteration)
                 if (self._iteration_id - self._first_decode_iteration) % 8 == 7 and (len(self.swapping_out) + len(self.swapped_out)) < len(running_decodes) // 2:
-                    self._begin_swap_out(seq)
+                    self._swap_out(seq)
                     seq_ids_to_swap_out.append(seq.seq_id)
                     logger.debug(f"(Iteration: {self._iteration_id}) Swapped out {seq.seq_id}! {len(self.swapping_out)} sequences swapping, {len(self.swapped_out)} sequences swapped out")
                     continue
@@ -180,7 +180,7 @@ class OccasionalSwappingScheduler(BaseScheduler):
             id=self._iteration_id,
             ignored_seq_ids=[],
             preempted_seq_ids=[],
+            swap_out_seq_ids=seq_ids_to_swap_out,
             begin_swap_in_seq_ids=seq_ids_to_swap_in,
-            begin_swap_out_seq_ids=seq_ids_to_swap_out,
             scheduled_seq_id_metadata_list=scheduled_seq_id_metadata_list,
         )

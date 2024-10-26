@@ -131,8 +131,8 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
 
     def _schedule_decodes(self, running_decodes: List[Sequence], now: float):
         running = []
+        swap_out_seq_ids = []
         begin_swap_in_seq_ids = []
-        begin_swap_out_seq_ids = []
         scheduled_seq_id_metadata_list = []
 
         num_batched_tokens = 0
@@ -148,13 +148,13 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 if running_decodes:
                     # Preempt the lowest-priority sequence groups.
                     victim_seq = running_decodes.pop(-1)
-                    self._begin_swap_out(victim_seq)
-                    begin_swap_out_seq_ids.append(victim_seq.seq_id)
+                    self._swap_out(victim_seq)
+                    swap_out_seq_ids.append(victim_seq.seq_id)
                 else:
                     # No other sequence groups can be preempted.
                     # Preempt the current sequence group.
-                    self._begin_swap_out(seq)
-                    begin_swap_out_seq_ids.append(seq.seq_id)
+                    self._swap_out(seq)
+                    swap_out_seq_ids.append(seq.seq_id)
                     break
             else:
                 # Append new slots to the sequence group.
@@ -181,7 +181,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             running,
             [],
             [],
+            swap_out_seq_ids,
             begin_swap_in_seq_ids,
-            begin_swap_out_seq_ids,
             scheduled_seq_id_metadata_list
         )

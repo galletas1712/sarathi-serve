@@ -10,14 +10,14 @@ class SchedulerOutputs:
         id: int,
         ignored_seq_ids: List[str],
         preempted_seq_ids: List[str],
-        begin_swap_out_seq_ids: List[str],
+        swap_out_seq_ids: List[str],
         begin_swap_in_seq_ids: List[str],
         scheduled_seq_id_metadata_list: List[SequenceScheduleMetadata],
     ) -> None:
         self.id = id
         self.ignored_seq_ids = ignored_seq_ids
         self.preempted_seq_ids = preempted_seq_ids
-        self.begin_swap_out_seq_ids = begin_swap_out_seq_ids
+        self.swap_out_seq_ids = swap_out_seq_ids
         self.begin_swap_in_seq_ids = begin_swap_in_seq_ids
         self.scheduled_seq_id_metadata_list = sorted(
             scheduled_seq_id_metadata_list, key=lambda x: not x.is_prompt  # NOTE: This is sorting decodes at the beginning
@@ -36,7 +36,7 @@ class SchedulerOutputs:
     def is_empty(self) -> bool:
         # Used to check if we should run execute_model at all (but that includes cache swapping)
         # NOTE: pipeline_parallel_engine has a different definition and this is invalid
-        return not self.scheduled_seq_id_metadata_list and not self.begin_swap_in_seq_ids and not self.begin_swap_out_seq_ids
+        return not self.scheduled_seq_id_metadata_list and not self.begin_swap_in_seq_ids and not self.swap_out_seq_ids
 
     def has_no_output(self) -> bool:
         # NOTE: same deal with pipeline_parallel_engine
@@ -51,7 +51,7 @@ class SchedulerOutputs:
             f"SchedulerOutputs(id={self.id}, "
             f"ignored_seq_ids={self.ignored_seq_ids}, "
             f"preempted_seq_ids={self.preempted_seq_ids}, "
-            f"begin_swap_out_seq_ids={self.begin_swap_out_seq_ids}, "
+            f"swap_out_seq_ids={self.swap_out_seq_ids}, "
             f"begin_swap_in_seq_ids={self.begin_swap_in_seq_ids}, "
             f"scheduled_seq_id_metadata_list={self.scheduled_seq_id_metadata_list})"
         )
