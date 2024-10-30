@@ -201,62 +201,56 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         while queue:
             seq = queue.pop(0)
 
-            if not seq.is_paused() and not seq.is_swapped_out():
-                assert seq.is_swapping_in()
-                continue
-        
-            # NOTE: We'll manually modify this number, but this is just prefetching
-            if seq.is_paused():
-                # Append
-                num_required_blocks = len(seq.logical_token_blocks) - self.block_manager.num_blocks_allocated(seq.seq_id, BlockDevice.GPU)
-                assert num_required_blocks == 0 or num_required_blocks == 1
-            else:
-                # Swap in
-                num_required_blocks = self.block_manager.num_blocks_allocated(seq.seq_id, BlockDevice.CPU)
+            assert seq.is_paused() or seq.is_swapped_out()
 
-            victim_seqs = []
-            victim_idx = len(queue) - 1
-            while num_required_blocks > 0 and self.block_manager.num_blocks_remaining_after(num_required_blocks) < 0:
-                # Need to search for the lowest priority sequence actually running
-                while victim_idx >= 0:
-                    if queue[victim_idx].is_paused():
-                        break
-                    victim_idx -= 1
+            def can_append_slot():
+                return self.block_manager.can_append_slot(seq)
+            
+            def can_swap_in_and_append_slot():
+                return self.block_manager.can_swap_in_and_append_slot(seq.seq_id, len(seq.logical_token_blocks))
+            
+            can_schedule = can_append_slot if seq.is_paused() else can_swap_in_and_append_slot
 
-                if victim_idx >= 0:
-                    victim_seq = queue.pop(victim_idx)
-
-                    num_required_blocks -= len(victim_seq.logical_token_blocks)
-                    num_required_blocks = max(0, num_required_blocks)
-
-                    victim_seqs.append(victim_seq)
-                    victim_idx -= 1
+            while not can_schedule():
+                if queue:
+                    # Preempt the lowest-priority sequence groups.
+                    victim_seq = queue.pop(-1)
+                    if victim_seq.is_paused():
+                        print(f"Iteration {self._iteration_id}: Swapping out {victim_seq.seq_id} to make space for {seq.seq_id}")
+                        self._swap_out(victim_seq)
+                        swap_out_seq_ids.append(victim_seq.seq_id)
+                    else:
+                        print(f"Iteration {self._iteration_id}: Leaving {victim_seq.seq_id} swapped out to make space for {seq.seq_id}")
+                        assert victim_seq.is_swapped_out()
                 else:
+                    # No other sequence groups can be prempted.
+                    # Preempt the current sequence group.
+                    if seq.is_paused():
+                        print(f"Iteration {self._iteration_id}: Swapping out {seq.seq_id} because can't run :(")
+                        self._swap_out(seq)
+                        swap_out_seq_ids.append(seq.seq_id)
+                    else:
+                        print(f"Iteration {self._iteration_id}: Can't swap in {seq.seq_id} because no space :(")
+                        assert seq.is_swapped_out()
                     break
-        
-            if num_required_blocks > 0 and self.block_manager.num_blocks_remaining_after(num_required_blocks) < 0:
-                break
-
-            for victim_seq in victim_seqs:
-                print(f"Iteration {self._iteration_id}: Swapping out {victim_seq.seq_id} to make room for {seq.seq_id}")
-                self._swap_out(victim_seq)
-                swap_out_seq_ids.append(victim_seq.seq_id)
-
-            if seq.is_paused():
-                print(f"Iteration {self._iteration_id}: Scheduling {seq.seq_id}")
-                # Append new slots to the sequence group.
-                self._append_slot(seq)
-                running.append(seq)
-                num_batched_tokens += 1
-                scheduled_seq_id_metadata_list.append(
-                    SequenceScheduleMetadata.from_sequence(seq)
-                )
-                self.last_iteration_ran[seq.seq_id] = self._iteration_id
-            elif seq.is_swapped_out():
-                print(f"Iteration {self._iteration_id}: Swapping in {seq.seq_id}")
-                assert self.block_manager.can_swap_in(seq.seq_id)
-                self._begin_swap_in(seq)
-                begin_swap_in_seq_ids.append(seq.seq_id)
+            else:
+                if seq.is_paused():
+                    print(f"Iteration {self._iteration_id}: Scheduling {seq.seq_id}")
+                    # Append new slots to the sequence group.
+                    self._append_slot(seq)
+                    running.append(seq)
+                    num_batched_tokens += 1
+                    scheduled_seq_id_metadata_list.append(
+                        SequenceScheduleMetadata.from_sequence(seq)
+                    )
+                    self.last_iteration_ran[seq.seq_id] = self._iteration_id
+                elif seq.is_swapped_out():
+                    print(f"Iteration {self._iteration_id}: Swapping in {seq.seq_id}")
+                    assert self.block_manager.can_swap_in_and_append_slot(seq.seq_id, len(seq.logical_token_blocks))
+                    self._begin_swap_in(seq)
+                    begin_swap_in_seq_ids.append(seq.seq_id)
+                else:
+                    assert False, f"Sequence {seq.seq_id} is in an invalid state: {seq.state}"
 
         self._update_priorities(running)
         

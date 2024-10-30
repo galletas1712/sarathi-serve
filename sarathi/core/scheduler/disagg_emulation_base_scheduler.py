@@ -8,6 +8,7 @@ from sarathi.config import (
     ParallelConfig,
     SarathiSchedulerConfig,
 )
+from sarathi.core.block_space_manager.base_block_space_manager import BlockDevice
 from sarathi.core.block_space_manager.sarathi_block_space_manager import (
     SarathiBlockSpaceManager,
 )
@@ -58,6 +59,14 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
             else:
                 running_decodes.append(seq)
 
+        print(f"------ START SCHEDULER {self._iteration_id} -------")
+        print(f"Swapped out: {list(self.swapped_out.keys())}")
+        print(f"Running prefills: {[seq.seq_id for seq in running_prefills]}")
+        print(f"Running decodes: {[seq.seq_id for seq in running_decodes]}")
+        gpu_metadata, cpu_metadata = self.block_manager.get_block_table_metadata()
+        print(f"All GPU block table lens {gpu_metadata}")
+        print(f"All CPU block table lens {cpu_metadata}")
+
         prefill_scheduled_success = False
 
         # NOTE: We will never schedule a prefill if there's decode sequences swapping in/out - we want to profile this
@@ -68,7 +77,6 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
             not self.swapping_in and
             not self.swapped_out
         ):
-            # print(f"Iteration {self._iteration_id}: scheduling prefill")
             # NOTE: we keep decodes in memory, but don't add it to scheduled_seq_id_metadata list so it doesn't get run
             # NOTE: _schedule_prefills should also schedule running prefills
             (
@@ -81,10 +89,10 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
             ) = self._schedule_prefills(running_prefills, running_decodes, now)
 
             if scheduled_seq_id_metadata_list:
+                print(f"Iteration {self._iteration_id}: scheduled PREFILL")
                 prefill_scheduled_success = True
         
         if not prefill_scheduled_success:
-            # print(f"Iteration {self._iteration_id}: scheduling decode")
             (
                 running,
                 ignored_seq_ids,
@@ -97,15 +105,10 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
         self.running = running
         self.running = self.policy.sort_by_priority(now, self.running)
         self.waiting = self.policy.sort_by_priority(now, self.waiting)
+
         print("Number of waiting requests: ", len(self.waiting))
         print(f"Swapped out: {len(self.swapped_out)}, Swapped in: {len(self.swapped_in)}, Swapping in: {len(self.swapping_in)}")
-
-        # print(f"Iteration {self._iteration_id} running: {running}")
-        # print(f"Iteration {self._iteration_id} ignored: {ignored_seq_ids}")
-        # print(f"Iteration {self._iteration_id} preempted: {preempted_seq_ids}")
-        # print(f"Iteration {self._iteration_id} swap out: {swap_out_seq_ids}")
-        # print(f"Iteration {self._iteration_id} begin swap in: {begin_swap_in_seq_ids}")
-        # print(f"Iteration {self._iteration_id} scheduled: {scheduled_seq_id_metadata_list}")
+        print(f"------ END SCHEDULER {self._iteration_id} -------")
 
         return SchedulerOutputs(
             id=self._iteration_id,

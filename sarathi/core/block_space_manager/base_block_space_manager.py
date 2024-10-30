@@ -1,7 +1,7 @@
 """A block manager that manages token blocks."""
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 from enum import Enum
 
 from sarathi.core.datatypes.block import PhysicalTokenBlock
@@ -85,13 +85,28 @@ class BaseBlockSpaceManager(ABC):
         """Returns the number of blocks to allocate for a request initially."""
         pass
 
+    def _ensure_valid(self) -> None:
+        for seq_id in self.block_tables.keys():
+            assert self.num_blocks_allocated(seq_id, BlockDevice.GPU) == len(self.get_gpu_block_table(seq_id))
+            assert self.num_blocks_allocated(seq_id, BlockDevice.CPU) == len(self.get_cpu_block_table(seq_id))
+
+        for device in [BlockDevice.GPU, BlockDevice.CPU]:
+            total_blocks_in_block_table = 0
+            for seq_id in self.block_tables.keys():
+                total_blocks_in_block_table += self.num_blocks_allocated(seq_id, device)
+            
+            # print(f"Total blocks in block table: {total_blocks_in_block_table}, total blocks: {self.allocators[device].num_blocks}, num free blocks: {self.allocators[device].get_num_free_blocks()}")
+            assert total_blocks_in_block_table == self.allocators[device].num_blocks - self.allocators[device].get_num_free_blocks()
+        
     def can_allocate(self, seq: Sequence, device: BlockDevice = BlockDevice.GPU) -> bool:
+        assert isinstance(seq, Sequence)
         num_required_blocks = self.get_num_initial_blocks(seq)
         num_free_blocks = self.allocators[device].get_num_free_blocks()
         # Use watermark to avoid frequent cache eviction.
         return num_free_blocks - num_required_blocks >= self.watermark_blocks
 
     def allocate(self, seq: Sequence, initial_device: BlockDevice = BlockDevice.GPU) -> None:
+        assert isinstance(seq, Sequence)
         # Allocate physical blocks (on some initial device, either GPU or CPU)
         # NOTE: Most of the time, this should be on GPU.
         # Allocated new physical token blocks that will store the prompt tokens.
@@ -105,8 +120,12 @@ class BaseBlockSpaceManager(ABC):
             block_table.append(block)
 
         self.block_tables[seq.seq_id] = {initial_device: block_table}
+        self._ensure_valid()
     
     def num_blocks_allocated(self, seq_id: str, device: BlockDevice) -> int:
+        assert isinstance(seq_id, str)
+        if device not in self.block_tables[seq_id]:
+            return 0
         return len(self.block_tables[seq_id][device])
     
     def num_blocks_remaining_after(self, num_required_blocks: int, device: BlockDevice = BlockDevice.GPU, use_watermark: bool = True) -> int:
@@ -114,70 +133,118 @@ class BaseBlockSpaceManager(ABC):
         return num_free_blocks - (self.watermark_blocks if use_watermark else 0) - num_required_blocks
     
     def can_append_slot(self, seq: Sequence, device: BlockDevice = BlockDevice.GPU) -> bool:
+        assert isinstance(seq, Sequence)
         assert device == BlockDevice.GPU
-        logical_blocks = seq.logical_token_blocks
         block_table_len = self.num_blocks_allocated(seq.seq_id, device)
-        assert len(logical_blocks) - block_table_len <= 1
+        assert len(seq.logical_token_blocks) - block_table_len <= 1
         return self.num_blocks_remaining_after(
-            num_required_blocks=1 if block_table_len < len(logical_blocks) else 0,
+            num_required_blocks=1 if block_table_len < len(seq.logical_token_blocks) else 0,
             device=device
         ) >= 0
     
     def append_slot(self, seq: Sequence, device: BlockDevice = BlockDevice.GPU) -> None:
+        assert isinstance(seq, Sequence)
         """Allocate a physical slot for a new token."""
         assert device == BlockDevice.GPU
-        logical_blocks = seq.logical_token_blocks
         block_table = self.block_tables[seq.seq_id][device]
 
-        if len(block_table) < len(logical_blocks):
+        if len(block_table) < len(seq.logical_token_blocks):
             # The sequence has a new logical block.
             # Allocate a new physical block.
             assert self.can_append_slot(seq, device)
             block = self.allocators[device].allocate()
             block_table.append(block)
+        
+        self._ensure_valid()
 
     def _free_device_blocks(self, seq_id: str, device: BlockDevice) -> None:
+        assert isinstance(seq_id, str)
         block_table = self.block_tables[seq_id][device]
         for block in set(block_table):
             self.allocators[device].free(block)
         self.block_tables[seq_id].pop(device)
+        self._ensure_valid()
 
     def _free_block_table(self, seq_id: str) -> None:
+        assert isinstance(seq_id, str)
         if seq_id not in self.block_tables:
             # Already freed or haven't been scheduled yet.
             return
         devices = list(self.block_tables[seq_id].keys())
         for device in devices:
             self._free_device_blocks(seq_id, device)
+        self._ensure_valid()
 
     def free(self, seq_id: str) -> None:
+        assert isinstance(seq_id, str)
         self._free_block_table(seq_id)
         self.block_tables.pop(seq_id)
+        self._ensure_valid()
 
     def reset(self) -> None:
         for seq_id in self.block_tables.keys():
             self._free_block_table(seq_id)
         self.block_tables.clear()
+        self._ensure_valid()
     
     def get_gpu_block_table(self, seq_id: str) -> List[int]:
+        assert isinstance(seq_id, str)
+        if BlockDevice.GPU not in self.block_tables[seq_id]:
+            return []
         block_table = self.block_tables[seq_id][BlockDevice.GPU]
         return [block.block_number for block in block_table]  # TODO: make into generator instead?
 
+    def get_cpu_block_table(self, seq_id: str) -> List[int]:
+        assert isinstance(seq_id, str)
+        if BlockDevice.CPU not in self.block_tables[seq_id]:
+            return []
+        block_table = self.block_tables[seq_id][BlockDevice.CPU]
+        return [block.block_number for block in block_table]  # TODO: make into generator instead?
+    
+    def get_block_table_metadata(self) -> List[Tuple[int, int]]:
+        result_gpu = []
+        result_cpu = []
+        for seq_id in self.block_tables.keys():
+            if BlockDevice.GPU in self.block_tables[seq_id]:
+                result_gpu.append((seq_id, len(self.block_tables[seq_id][BlockDevice.GPU])))
+            if BlockDevice.CPU in self.block_tables[seq_id]:
+                result_cpu.append((seq_id, len(self.block_tables[seq_id][BlockDevice.CPU])))
+        
+        return result_gpu, result_cpu
+
     def is_allocated_in_gpu(self, seq_id: str) -> bool:
+        assert isinstance(seq_id, str)
         return seq_id in self.block_tables and BlockDevice.GPU in self.block_tables[seq_id]
     
     def is_allocated_in_cpu(self, seq_id: str) -> bool:
+        assert isinstance(seq_id, str)
         return seq_id in self.block_tables and BlockDevice.CPU in self.block_tables[seq_id]
     
-    def can_swap_in(self, seq_id: str) -> bool:
+    def _can_swap_in(self, seq_id: str, num_logical_blocks: Optional[int]) -> bool:
+        # NOTE: If num_logical_blocks is None, this means we use the number of blocks already allocated (not the number of logical blocks required in the decode step)
+
+        assert isinstance(seq_id, str)
         # print(f"Can swap in? {seq_id}, {list(self.block_tables.keys())}")
         assert seq_id in self.block_tables
         assert BlockDevice.GPU not in self.block_tables[seq_id] and BlockDevice.CPU in self.block_tables[seq_id]
 
-        num_required_blocks = self.num_blocks_allocated(seq_id, BlockDevice.CPU)
-        return self.num_blocks_remaining_after(num_required_blocks, BlockDevice.GPU) >= 0
+        # If we want to append a slot right after swap in (if needed), we measure required blocks using logical token blocks, as in append_slot
+        # Otherwise, we only need however many blocks were already allocated
+        if num_logical_blocks is None:
+            num_logical_blocks = self.num_blocks_allocated(seq_id, BlockDevice.CPU)
+
+        return self.num_blocks_remaining_after(num_logical_blocks, BlockDevice.GPU) >= 0
+    
+    def can_swap_in(self, seq_id: str) -> bool:
+        assert isinstance(seq_id, str)
+        return self._can_swap_in(seq_id, None)
+    
+    def can_swap_in_and_append_slot(self, seq_id: str, num_logical_blocks: int) -> bool:
+        assert isinstance(seq_id, str)
+        return self._can_swap_in(seq_id, num_logical_blocks)
     
     def begin_swap_in(self, seq_id: str):
+        assert isinstance(seq_id, str)
         assert self.can_swap_in(seq_id)
 
         self.block_tables[seq_id][BlockDevice.GPU] = []
@@ -189,20 +256,25 @@ class BaseBlockSpaceManager(ABC):
             self.block_tables[seq_id][BlockDevice.GPU].append(gpu_block)
         
         self.swap_in_mapping[seq_id] = swap_in_mapping
+        self._ensure_valid()
         # print(f"Begin swap in {seq_id} {list(self.block_tables.keys())}")
         
     def finish_swap_in(self, seq_id: str):
+        assert isinstance(seq_id, str)
         self._free_device_blocks(seq_id, BlockDevice.CPU)
+        self._ensure_valid()
         # print(f"Finish swap in {seq_id} {list(self.block_tables.keys())}")
 
     def can_swap_out(self, seq_id: str) -> bool:
+        assert isinstance(seq_id, str)
         assert seq_id in self.block_tables
         assert BlockDevice.CPU not in self.block_tables[seq_id] and BlockDevice.GPU in self.block_tables[seq_id]
 
         num_required_blocks = self.num_blocks_allocated(seq_id, BlockDevice.GPU)
-        return self.num_blocks_remaining_after(num_required_blocks, BlockDevice.CPU, use_watermark=False) >= 0
+        return self.num_blocks_remaining_after(num_required_blocks, BlockDevice.CPU) >= 0
     
     def swap_out(self, seq_id: str):
+        assert isinstance(seq_id, str)
         assert self.can_swap_out(seq_id)
 
         self.block_tables[seq_id][BlockDevice.CPU] = []
@@ -215,9 +287,12 @@ class BaseBlockSpaceManager(ABC):
         
         self.swap_out_mapping[seq_id] = swap_out_mapping
         self._free_device_blocks(seq_id, BlockDevice.GPU)
+        self._ensure_valid()
     
     def get_swap_in_mapping(self, seq_id: str) -> List[int]:
+        assert isinstance(seq_id, str)
         return self.swap_in_mapping[seq_id]
     
     def get_swap_out_mapping(self, seq_id: str) -> List[int]:
+        assert isinstance(seq_id, str)
         return self.swap_out_mapping[seq_id]

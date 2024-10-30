@@ -137,45 +137,61 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
 
         num_batched_tokens = 0
 
-        while running_decodes:
-            seq = running_decodes.pop(0)
+        # True FCFS order
+        queue = self.policy.sort_by_priority(now, [*running_decodes, *self.swapped_out.values()])
 
-            if not seq.is_paused():
-                running.append(seq)
-                continue
+        while queue:
+            seq = queue.pop(0)
 
-            while not self.block_manager.can_append_slot():
-                if running_decodes:
+            assert seq.is_paused() or seq.is_swapped_out()
+
+            def can_append_slot():
+                return self.block_manager.can_append_slot(seq)
+            
+            def can_swap_in_and_append_slot():
+                return self.block_manager.can_swap_in_and_append_slot(seq.seq_id, len(seq.logical_token_blocks))
+            
+            can_schedule = can_append_slot if seq.is_paused() else can_swap_in_and_append_slot
+
+            while not can_schedule():
+                if queue:
                     # Preempt the lowest-priority sequence groups.
-                    victim_seq = running_decodes.pop(-1)
-                    self._swap_out(victim_seq)
-                    swap_out_seq_ids.append(victim_seq.seq_id)
+                    victim_seq = queue.pop(-1)
+                    if victim_seq.is_paused():
+                        print(f"Iteration {self._iteration_id}: Swapping out {victim_seq.seq_id} to make space for {seq.seq_id}")
+                        self._swap_out(victim_seq)
+                        swap_out_seq_ids.append(victim_seq.seq_id)
+                    else:
+                        print(f"Iteration {self._iteration_id}: Leaving {victim_seq.seq_id} swapped out to make space for {seq.seq_id}")
+                        assert victim_seq.is_swapped_out()
                 else:
-                    # No other sequence groups can be preempted.
+                    # No other sequence groups can be prempted.
                     # Preempt the current sequence group.
-                    self._swap_out(seq)
-                    swap_out_seq_ids.append(seq.seq_id)
+                    if seq.is_paused():
+                        print(f"Iteration {self._iteration_id}: Swapping out {seq.seq_id} because can't run :(")
+                        self._swap_out(seq)
+                        swap_out_seq_ids.append(seq.seq_id)
+                    else:
+                        print(f"Iteration {self._iteration_id}: Can't swap in {seq.seq_id} because no space :(")
+                        assert seq.is_swapped_out()
                     break
             else:
-                # Append new slots to the sequence group.
-                self._append_slot(seq)
-                running.append(seq)
-                num_batched_tokens += 1
-                scheduled_seq_id_metadata_list.append(
-                    SequenceScheduleMetadata.from_sequence(seq)
-                )
-        
-        # Swap in outstanding swapped out sequences if we have room
-        # This assumes FCFS backpressure behavior in the base scheduler
-        swapped_out = self.policy.sort_by_priority(now, self.swapped_out.values())
-        while swapped_out:
-            seq = swapped_out.pop(0)
-
-            if not self.block_manager.can_swap_in(seq.seq_id):
-                break
-            
-            self._begin_swap_in(seq)
-            begin_swap_in_seq_ids.append(seq.seq_id)
+                if seq.is_paused():
+                    print(f"Iteration {self._iteration_id}: Scheduling {seq.seq_id}")
+                    # Append new slots to the sequence group.
+                    self._append_slot(seq)
+                    running.append(seq)
+                    num_batched_tokens += 1
+                    scheduled_seq_id_metadata_list.append(
+                        SequenceScheduleMetadata.from_sequence(seq)
+                    )
+                elif seq.is_swapped_out():
+                    print(f"Iteration {self._iteration_id}: Swapping in {seq.seq_id}")
+                    assert self.block_manager.can_swap_in_and_append_slot(seq.seq_id, len(seq.logical_token_blocks))
+                    self._begin_swap_in(seq)
+                    begin_swap_in_seq_ids.append(seq.seq_id)
+                else:
+                    assert False, f"Sequence {seq.seq_id} is in an invalid state: {seq.state}"
         
         return (
             running,
