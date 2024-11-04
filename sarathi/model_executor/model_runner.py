@@ -5,7 +5,7 @@ import torch.distributed
 
 from sarathi.config import SchedulerType, SystemConfig
 from sarathi.core.datatypes.sampling_params import SamplingParams
-from sarathi.core.datatypes.sequence import Sequence, SequenceMetadata
+from sarathi.core.datatypes.sequence import Sequence, SequenceExecutionMetadata
 from sarathi.logger import init_logger
 from sarathi.metrics.constants import CpuOperationMetrics
 from sarathi.metrics.cpu_timer import CpuTimer
@@ -57,25 +57,25 @@ class ModelRunner:
 
     def _prepare_inputs(
         self,
-        seq_metadata_list: List[SequenceMetadata],
+        seq_exec_metadata_list: List[SequenceExecutionMetadata],
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         input_tokens: List[int] = []
         input_positions: List[int] = []
         # need to know prompt chunk sizes for each prompt sequence for sampler
         current_prompt_chunk_lens: List[int] = []
 
-        for seq_metadata in seq_metadata_list:
-            if not seq_metadata.is_prompt:
+        for seq_exec_metadata in seq_exec_metadata_list:
+            if not seq_exec_metadata.is_prompt:
                 continue
 
-            prompt_chunk_len = seq_metadata.prompt_chunk_len
+            prompt_chunk_len = seq_exec_metadata.prompt_chunk_len
             current_prompt_chunk_tokens = (
-                seq_metadata.seq.get_next_prompt_chunk_token_ids(prompt_chunk_len)
+                seq_exec_metadata.seq.get_next_prompt_chunk_token_ids(prompt_chunk_len)
             )
             current_prompt_chunk_len = len(current_prompt_chunk_tokens)
             current_prompt_chunk_lens.append(current_prompt_chunk_len)
             processed_prompt_len = (
-                seq_metadata.seq.get_num_prompt_tokens_stage_processed()
+                seq_exec_metadata.seq.get_num_prompt_tokens_stage_processed()
             )
 
             current_total_len = processed_prompt_len + current_prompt_chunk_len
@@ -83,14 +83,14 @@ class ModelRunner:
             input_tokens.extend(current_prompt_chunk_tokens)
             input_positions.extend(range(processed_prompt_len, current_total_len))
 
-        for seq_metadata in seq_metadata_list:
-            if seq_metadata.is_prompt:
+        for seq_exec_metadata in seq_exec_metadata_list:
+            if seq_exec_metadata.is_prompt:
                 continue
 
-            generation_token = seq_metadata.seq.get_last_token_id()
+            generation_token = seq_exec_metadata.seq.get_last_token_id()
             input_tokens.append(generation_token)
 
-            context_len = seq_metadata.seq.get_len()
+            context_len = seq_exec_metadata.seq.get_len()
             position = context_len - 1
             input_positions.append(position)
 
@@ -130,14 +130,9 @@ class ModelRunner:
         )
         max_num_seqs = self.config.scheduler_config.max_num_seqs
 
-        seq_metadata_list: List[SequenceMetadata] = []
+        seq_exec_metadata_list: List[SequenceExecutionMetadata] = []
 
-        if (
-            self.config.scheduler_config.get_type() == SchedulerType.SARATHI
-            or self.config.scheduler_config.get_type() == SchedulerType.SIMPLE_CHUNKING
-            or self.config.scheduler_config.get_type() == SchedulerType.ROLLING_PREEMPTION_PROFILING
-            or self.config.scheduler_config.get_type() == SchedulerType.OCCASIONAL_SWAPPING
-        ):
+        if self.config.scheduler_config.uses_chunked_prefill:
             # Profile memory usage with a single `chunk_size` chunk
             # which is the last chunk in the longest supported sequence.
             chunk_size = self.config.scheduler_config.chunk_size
@@ -153,12 +148,12 @@ class ModelRunner:
                 arrival_time=None,
                 sampling_params=sampling_params,
             )
-            seq_metadata = SequenceMetadata(
+            seq_exec_metadata = SequenceExecutionMetadata(
                 seq=seq,
                 block_table=None,
                 prompt_chunk_len=chunk_size,
             )
-            seq_metadata_list.append(seq_metadata)
+            seq_exec_metadata_list.append(seq_exec_metadata)
         else:
             # Profile memory usage with max_num_sequences sequences and the total
             # number of tokens equal to max_num_batched_tokens.
@@ -176,15 +171,15 @@ class ModelRunner:
                     arrival_time=None,
                     sampling_params=sampling_params,
                 )
-                seq_metadata = SequenceMetadata(
+                seq_exec_metadata = SequenceExecutionMetadata(
                     seq=seq,
                     block_table=None,
                     prompt_chunk_len=seq_len,
                 )
-                seq_metadata_list.append(seq_metadata)
+                seq_exec_metadata_list.append(seq_exec_metadata)
 
-        input_tokens, input_positions = self._prepare_inputs(seq_metadata_list)
-        get_attention_wrapper().begin_forward(seq_metadata_list)
+        input_tokens, input_positions = self._prepare_inputs(seq_exec_metadata_list)
+        get_attention_wrapper().begin_forward(seq_exec_metadata_list)
 
         # Execute the model.
         num_layers = self.config.model_config.get_num_layers(
@@ -221,14 +216,14 @@ class ModelRunner:
 
     def run(
         self,
-        seq_metadata_list: List[SequenceMetadata],
+        seq_exec_metadata_list: List[SequenceExecutionMetadata],
         gpu_cache: Optional[List[torch.Tensor]] = None,
     ) -> torch.Tensor:
         # Prepare input tensors.
         with self._prepare_inputs_e2e_timer:
-            input_tokens, input_positions = self._prepare_inputs(seq_metadata_list)
+            input_tokens, input_positions = self._prepare_inputs(seq_exec_metadata_list)
 
-        get_attention_wrapper().begin_forward(seq_metadata_list)
+        get_attention_wrapper().begin_forward(seq_exec_metadata_list)
 
         with self._model_execution_e2e_timer:
             # Execute the model.
@@ -240,13 +235,13 @@ class ModelRunner:
                 )
             except RuntimeError as e:
                 logger.error(
-                    f"RuntimeError: {e} for seq_metadata_list: {seq_metadata_list}"
+                    f"RuntimeError: {e} for seq_exec_metadata_list: {seq_exec_metadata_list}"
                 )
                 raise e
 
         with self._sampler_e2e_timer:
             if self.sampler is not None:
-                output = self.sampler(output, seq_metadata_list)
+                output = self.sampler(output, seq_exec_metadata_list)
 
         get_attention_wrapper().end_forward()
 

@@ -188,6 +188,7 @@ class BaseSchedulerConfig(BasePolyConfig):
             "help": "Maximum number of sequences to be processed in a single iteration (batch size)."
         },
     )
+    uses_chunked_prefill: bool = field(default=False)
 
     @abstractmethod
     def get_max_num_batched_tokens(self, max_model_len: int):
@@ -216,6 +217,7 @@ class SimpleChunkingSchedulerConfig(BaseSchedulerConfig):
         default=512,
         metadata={"help": "Size of each chunk for simple chunking scheduler."},
     )
+    uses_chunked_prefill: bool = field(default=True)
 
     def get_max_num_batched_tokens(self, max_model_len: int):
         return self.chunk_size
@@ -268,6 +270,7 @@ class SarathiSchedulerConfig(BaseSchedulerConfig):
     chunk_schedule_stages: Optional[int] = field(
         default=None, metadata={"help": "Number of stages for chunk scheduling."}
     )
+    uses_chunked_prefill: bool = field(default=True)
 
     def get_max_num_batched_tokens(self, max_model_len: int):
         # Sarathi never schedules more than chunk_size tokens in one iteration.
@@ -286,6 +289,7 @@ class DisaggEmulationSchedulerConfig(BaseSchedulerConfig):
     chunk_size: int = field(
         default=512, metadata={"help": "Size of each chunk for disagg emulation scheduler."}
     )
+    uses_chunked_prefill: bool = field(default=True)
 
     def get_max_num_batched_tokens(self, max_model_len: int):
         return self.chunk_size
@@ -323,6 +327,7 @@ class RollingPreemptionProfilingSchedulerConfig(BaseSchedulerConfig):
     chunk_size: int = 512
 
     max_num_batched_tokens: Optional[int] = None
+    uses_chunked_prefill: bool = field(default=True)
 
     def get_max_num_batched_tokens(self, max_model_len: int):
         if self.max_num_batched_tokens is not None:
@@ -340,6 +345,7 @@ class OccasionalSwappingSchedulerConfig(BaseSchedulerConfig):
         default=512,
         metadata={"help": "Size of each chunk for simple chunking scheduler."},
     )
+    uses_chunked_prefill: bool = field(default=True)
 
     max_num_batched_tokens: Optional[int] = None
 

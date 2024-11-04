@@ -183,11 +183,11 @@ class BaseWorker:
         # on_schedule will set up block tables, but not extract them
         self.seq_manager.on_schedule(scheduler_outputs)
         # This will actually extract the block tables
-        seq_metadata_list = self.seq_manager.get_seq_metadata_list(scheduler_outputs)
+        seq_exec_metadata_list = self.seq_manager.get_seq_exec_metadata_list(scheduler_outputs)
         
         self.metrics_store.on_batch_scheduled(
             batch_id=self.curr_batch_id,
-            seq_metadata_list=seq_metadata_list
+            seq_exec_metadata_list=seq_exec_metadata_list
         )
 
         # NOTE: Ordering of which ones are swapped out first
@@ -213,16 +213,16 @@ class BaseWorker:
 
         self.cache_engine.begin_swap_in(swap_in_mappings)
 
-        if seq_metadata_list:
+        if seq_exec_metadata_list:
             assert not scheduler_outputs.is_empty()  # Superset
             # print(f"Iteration: {self.curr_batch_id}, executing model!")
             sampler_outputs = self.model_runner.run(
-                seq_metadata_list,
+                seq_exec_metadata_list,
                 self.cache_engine.gpu_cache,
             )
             # print(f"Iteration: {self.curr_batch_id}, model executed!")
         else:
-            # print(f"Iteration: {self.curr_batch_id}, no seq_metadata_list!")
+            # print(f"Iteration: {self.curr_batch_id}, no seq_exec_metadata_list!")
             sampler_outputs = []
 
         finished_seq_ids = self.seq_manager.on_step_completed(scheduler_outputs, sampler_outputs)

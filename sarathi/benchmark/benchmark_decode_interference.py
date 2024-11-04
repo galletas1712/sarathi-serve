@@ -10,7 +10,7 @@ from torch.profiler import profile, record_function, ProfilerActivity
 
 from sarathi.benchmark.config import BenchmarkConfig
 from sarathi.core.datatypes.sampling_params import SamplingParams
-from sarathi.core.datatypes.sequence import Sequence, SequenceMetadata
+from sarathi.core.datatypes.sequence import Sequence, SequenceExecutionMetadata
 from sarathi.engine.llm_engine import BaseLLMEngine
 from sarathi.metrics.metrics_store import MetricsStore
 from sarathi.worker.cache_engine import CacheEngine
@@ -126,7 +126,7 @@ for benchmark_dim in benchmark_dims:
     seq_len = benchmark_dim.max_num_batched_tokens // benchmark_dim.batch_size
     num_blocks_per_seq = (seq_len + cache_engine.block_size - 1) // cache_engine.block_size
 
-    seq_metadata_list = []
+    seq_exec_metadata_list = []
     for seq_id in range(benchmark_dim.batch_size):
         seq = Sequence(
             seq_id=str(seq_id),
@@ -141,12 +141,12 @@ for benchmark_dim in benchmark_dims:
         block_table_start = seq_id * num_blocks_per_seq
         block_table = list(range(block_table_start, block_table_start + num_blocks_per_seq))
 
-        seq_metadata = SequenceMetadata(
+        seq_exec_metadata = SequenceExecutionMetadata(
             seq=seq,
             block_table=block_table,
             prompt_chunk_len=0,
         )
-        seq_metadata_list.append(seq_metadata)
+        seq_exec_metadata_list.append(seq_exec_metadata)
     
     num_blocks_active = num_blocks_per_seq * benchmark_dim.batch_size
     assert num_blocks_active + benchmark_dim.num_blocks_swap_out + benchmark_dim.num_blocks_swap_in <= cache_engine.num_gpu_blocks
@@ -180,9 +180,9 @@ for benchmark_dim in benchmark_dims:
     print("Swap in GPU region:", swap_in_gpu_region)
     print("Swap out CPU region:", swap_out_cpu_region)
     print("Swap in CPU region:", swap_in_cpu_region)
-    print("Min GPU block in sequence:", [min(seq_metadata.block_table) for seq_metadata in seq_metadata_list])
-    print("Max GPU block in sequence:", [max(seq_metadata.block_table) for seq_metadata in seq_metadata_list])
-    print("Number of unique GPU blocks in sequence:", [len(set(seq_metadata.block_table)) for seq_metadata in seq_metadata_list])
+    print("Min GPU block in sequence:", [min(seq_exec_metadata.block_table) for seq_exec_metadata in seq_exec_metadata_list])
+    print("Max GPU block in sequence:", [max(seq_exec_metadata.block_table) for seq_exec_metadata in seq_exec_metadata_list])
+    print("Number of unique GPU blocks in sequence:", [len(set(seq_exec_metadata.block_table)) for seq_exec_metadata in seq_exec_metadata_list])
 
     swap_out_stream = torch.cuda.Stream()
     swap_in_stream = torch.cuda.Stream()
@@ -200,7 +200,7 @@ for benchmark_dim in benchmark_dims:
             with record_function(f"Pass {pass_num - NUM_WARMUP_PASSES}"):
                 # NOTE: This isn't really realistic, but since we aren't adding any tokens it should be fine
                 with record_function("Begin forward"):
-                    get_attention_wrapper().begin_forward(seq_metadata_list)
+                    get_attention_wrapper().begin_forward(seq_exec_metadata_list)
                 
                 swap_out_start_event = torch.cuda.Event(enable_timing=True)
                 swap_out_end_event = torch.cuda.Event(enable_timing=True)
@@ -210,7 +210,7 @@ for benchmark_dim in benchmark_dims:
                 for i in range(benchmark_dim.num_decode_iters):
                     with record_function(f"Decode Iter {i}"):
                         with record_function("Prepare inputs"):
-                            input_tokens, input_positions = model_runner._prepare_inputs(seq_metadata_list)
+                            input_tokens, input_positions = model_runner._prepare_inputs(seq_exec_metadata_list)
 
                         if i == 0:
                             if benchmark_dim.num_blocks_swap_out > 0:

@@ -9,7 +9,7 @@ from sarathi.core.datatypes.sampling_params import SamplingType
 from sarathi.core.datatypes.sequence import (
     SamplerOutput,
     SamplerOutputs,
-    SequenceMetadata,
+    SequenceExecutionMetadata,
 )
 from sarathi.model_executor.parallel_utils.tensor_parallel import (
     gather_from_tensor_model_parallel_region,
@@ -41,16 +41,16 @@ class Sampler(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        seq_metadata_list: List[SequenceMetadata],
+        seq_exec_metadata_list: List[SequenceExecutionMetadata],
     ) -> SamplerOutputs:
         # Get the hidden states that we use for sampling.
-        hidden_states = _prune_hidden_states(hidden_states, seq_metadata_list)
+        hidden_states = _prune_hidden_states(hidden_states, seq_exec_metadata_list)
 
         # Get the logits for the next tokens.
         logits = _get_logits(hidden_states, self.embedding, self.vocab_size)
 
         # Apply temperature scaling.
-        temperatures = _get_temperatures(seq_metadata_list)
+        temperatures = _get_temperatures(seq_exec_metadata_list)
         assert len(temperatures) == logits.shape[0]
         if any(t != 1.0 for t in temperatures):
             t = torch.tensor(temperatures, dtype=logits.dtype, device=logits.device)
@@ -58,7 +58,7 @@ class Sampler(nn.Module):
             logits.div_(t.unsqueeze(dim=1))
 
         # Apply top-p and top-k truncation.
-        top_ps, top_ks = _get_top_p_top_k(seq_metadata_list, self.vocab_size)
+        top_ps, top_ks = _get_top_p_top_k(seq_exec_metadata_list, self.vocab_size)
         assert len(top_ps) == len(top_ks) == logits.shape[0]
         do_top_p = any(p < 1.0 - _SAMPLING_EPS for p in top_ps)
         do_top_k = any(k != self.vocab_size for k in top_ks)
@@ -73,7 +73,7 @@ class Sampler(nn.Module):
         logprobs = torch.log_softmax(logits, dim=-1, dtype=torch.float)
 
         # Sample the next tokens.
-        return _sample(probs, logprobs, seq_metadata_list)
+        return _sample(probs, logprobs, seq_exec_metadata_list)
 
 
 def _get_logits(
@@ -89,13 +89,13 @@ def _get_logits(
 
 def _prune_hidden_states(
     hidden_states: torch.Tensor,
-    seq_metadata_list: List[SequenceMetadata],
+    seq_exec_metadata_list: List[SequenceExecutionMetadata],
 ) -> torch.Tensor:
     last_token_indices = []
     token_idx = 0
-    for seq_metadata in seq_metadata_list:
-        if seq_metadata.is_prompt:
-            prompt_len = seq_metadata.prompt_chunk_len
+    for seq_exec_metadata in seq_exec_metadata_list:
+        if seq_exec_metadata.is_prompt:
+            prompt_len = seq_exec_metadata.prompt_chunk_len
             last_token_indices.append(token_idx + prompt_len - 1)
             token_idx += prompt_len
         else:
@@ -108,11 +108,11 @@ def _prune_hidden_states(
     return hidden_states.index_select(0, last_token_indices)
 
 
-def _get_temperatures(seq_metadata_list: List[SequenceMetadata]) -> List[float]:
+def _get_temperatures(seq_exec_metadata_list: List[SequenceExecutionMetadata]) -> List[float]:
     # Collect the temperatures for the logits.
     temperatures: List[float] = []
-    for seq_metadata in seq_metadata_list:
-        temperature = seq_metadata.seq.sampling_params.temperature
+    for seq_exec_metadata in seq_exec_metadata_list:
+        temperature = seq_exec_metadata.seq.sampling_params.temperature
         if temperature < _SAMPLING_EPS:
             # NOTE: Zero temperature means deterministic sampling
             # (i.e., greedy sampling or beam search).
@@ -123,15 +123,15 @@ def _get_temperatures(seq_metadata_list: List[SequenceMetadata]) -> List[float]:
 
 
 def _get_top_p_top_k(
-    seq_metadata_list: List[SequenceMetadata],
+    seq_exec_metadata_list: List[SequenceExecutionMetadata],
     vocab_size: int,
 ) -> Tuple[List[float], List[int]]:
     top_ps: List[float] = []
     top_ks: List[int] = []
-    for seq_metadata in seq_metadata_list:
-        top_p = seq_metadata.seq.sampling_params.top_p
+    for seq_exec_metadata in seq_exec_metadata_list:
+        top_p = seq_exec_metadata.seq.sampling_params.top_p
         # k should not be greater than the vocab size.
-        top_k = min(seq_metadata.seq.sampling_params.top_k, vocab_size)
+        top_k = min(seq_exec_metadata.seq.sampling_params.top_k, vocab_size)
         # k=-1 means no truncation.
         top_k = vocab_size if top_k == -1 else top_k
         top_ps.append(top_p)
@@ -188,17 +188,17 @@ def _random_sample(
 def _sample(
     probs: torch.Tensor,
     logprobs: torch.Tensor,
-    seq_metadata_list: List[SequenceMetadata],
+    seq_exec_metadata_list: List[SequenceExecutionMetadata],
 ) -> SamplerOutputs:
     categorized_seq_indices = {t: [] for t in SamplingType}
     category_num_tokens = {t: 0 for t in SamplingType}
 
-    for i, seq_metadata in enumerate(seq_metadata_list):
-        sampling_type = seq_metadata.seq.sampling_params.sampling_type
+    for i, seq_exec_metadata in enumerate(seq_exec_metadata_list):
+        sampling_type = seq_exec_metadata.seq.sampling_params.sampling_type
         categorized_seq_indices[sampling_type].append(i)
         category_num_tokens[sampling_type] += 1
 
-    outputs: List[SamplerOutput] = [None] * len(seq_metadata_list)
+    outputs: List[SamplerOutput] = [None] * len(seq_exec_metadata_list)
 
     for sampling_type in SamplingType:
         seq_indices = categorized_seq_indices[sampling_type]
@@ -215,7 +215,7 @@ def _sample(
             raise ValueError(f"Unsupported sampling type: {sampling_type}")
 
         for seq_idx, sample_result in zip(seq_indices, sample_results):
-            seq_id = seq_metadata_list[seq_idx].seq.seq_id
+            seq_id = seq_exec_metadata_list[seq_idx].seq.seq_id
             outputs[seq_idx] = SamplerOutput(seq_id, sample_result)
 
     return outputs

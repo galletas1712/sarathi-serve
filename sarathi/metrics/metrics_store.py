@@ -15,7 +15,7 @@ import wandb
 from sarathi.config import MetricsConfig, ModelConfig, ReplicaConfig
 from sarathi.core.datatypes.request_output import RequestOutput
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
-from sarathi.core.datatypes.sequence import Sequence, SequenceMetadata
+from sarathi.core.datatypes.sequence import Sequence, SequenceExecutionMetadata
 from sarathi.metrics.cdf_sketch import CDFSketch
 from sarathi.metrics.constants import (
     BatchMetricsCountDistribution,
@@ -446,7 +446,7 @@ class MetricsStore:
     @if_write_metrics
     def on_schedule(
         self,
-        seq_metadata_list: List[SequenceMetadata],
+        seq_exec_metadata_list: List[SequenceExecutionMetadata],
         start_time: float,
         end_time: float,
     ) -> None:
@@ -454,7 +454,7 @@ class MetricsStore:
             return
 
         trace = self._to_chrome_trace_dict(
-            seq_metadata_list,
+            seq_exec_metadata_list,
             0,  # tensor_parallel_rank
             "scheduler",  # pipeline_parallel_rank - used as tid
             start_time,
@@ -468,7 +468,7 @@ class MetricsStore:
     @if_write_metrics
     def on_batch_stage_end(
         self,
-        seq_metadata_list: List[SequenceMetadata],
+        seq_exec_metadata_list: List[SequenceExecutionMetadata],
         scheduler_outputs: SchedulerOutputs,
         tensor_parallel_rank: int,
         pipeline_parallel_rank: int,
@@ -479,11 +479,11 @@ class MetricsStore:
 
         self.next_batch_id = scheduler_outputs.id + 1
 
-        if not self.config.enable_chrome_trace or len(seq_metadata_list) == 0:
+        if not self.config.enable_chrome_trace or len(seq_exec_metadata_list) == 0:
             return
 
         trace = self._to_chrome_trace_dict(
-            seq_metadata_list,
+            seq_exec_metadata_list,
             tensor_parallel_rank,
             pipeline_parallel_rank,
             start_time,
@@ -497,7 +497,7 @@ class MetricsStore:
     @if_write_metrics
     def on_batch_end(
         self,
-        seq_metadata_list: List[SequenceMetadata],
+        seq_exec_metadata_list: List[SequenceExecutionMetadata],
         scheduler_outputs: SchedulerOutputs,
         batch_start_time: float,
         batch_end_time: float,
@@ -506,10 +506,10 @@ class MetricsStore:
         self.next_batch_id = scheduler_outputs.id + 1
         execution_time = batch_end_time - batch_start_time
 
-        for seq_metadata in seq_metadata_list:
-            self._update_per_token_execution_times(batch_end_time, seq_metadata.seq)
-            if seq_metadata.seq.is_finished():
-                self._on_request_end(seq_metadata.seq)
+        for seq_exec_metadata in seq_exec_metadata_list:
+            self._update_per_token_execution_times(batch_end_time, seq_exec_metadata.seq)
+            if seq_exec_metadata.seq.is_finished():
+                self._on_request_end(seq_exec_metadata.seq)
 
         if self.last_batch_end_time is not None:
             self.batch_metrics_time_distribution[
@@ -536,7 +536,7 @@ class MetricsStore:
 
         self.batch_metrics_count_distribution[
             BatchMetricsCountDistribution.BATCH_SIZE
-        ].put_pair(scheduler_outputs.id, len(seq_metadata_list))
+        ].put_pair(scheduler_outputs.id, len(seq_exec_metadata_list))
         # add the only time distribution we have for batch
         self.batch_metrics_time_distribution[
             BatchMetricsTimeDistribution.BATCH_EXECUTION_TIME
@@ -544,7 +544,7 @@ class MetricsStore:
 
     def _to_chrome_trace_dict(
         self,
-        seq_metadata_list: List[SequenceMetadata],
+        seq_exec_metadata_list: List[SequenceExecutionMetadata],
         tensor_parallel_rank: int,
         pipeline_parallel_rank: int,
         start_time: float,
@@ -554,17 +554,17 @@ class MetricsStore:
         if tensor_parallel_rank != 0:
             return None
 
-        seq_ids = [seq_metadata.seq.seq_id for seq_metadata in seq_metadata_list]
+        seq_ids = [seq_exec_metadata.seq.seq_id for seq_exec_metadata in seq_exec_metadata_list]
         prompt_chunk_lens = [
-            seq_metadata.prompt_chunk_len for seq_metadata in seq_metadata_list
+            seq_exec_metadata.prompt_chunk_len for seq_exec_metadata in seq_exec_metadata_list
         ]
 
         num_batched_prompt_tokens = sum(prompt_chunk_lens)
         num_batched_output_tokens = len(
             [
-                seq_metadata
-                for seq_metadata in seq_metadata_list
-                if not seq_metadata.is_prompt
+                seq_exec_metadata
+                for seq_exec_metadata in seq_exec_metadata_list
+                if not seq_exec_metadata.is_prompt
             ]
         )
 
@@ -578,7 +578,7 @@ class MetricsStore:
             "pid": self.replica_id,
             "tid": pipeline_parallel_rank,
             "args": {
-                "batch_size": len(seq_metadata_list),
+                "batch_size": len(seq_exec_metadata_list),
                 "request_ids": seq_ids,
                 "num_batched_tokens": num_batched_tokens,
                 "num_batched_prompt_tokens": num_batched_prompt_tokens,

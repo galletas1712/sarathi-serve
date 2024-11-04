@@ -5,7 +5,7 @@ from collections import deque
 
 import numpy as np
 
-from sarathi.core.datatypes.sequence import SequenceMetadata
+from sarathi.core.datatypes.sequence import SequenceExecutionMetadata
 
 
 def calculate_percentile_values(data: List[float], percentiles: List[float] = [50, 90, 95, 99, 99.9, 100]) -> Dict[float, float]:
@@ -208,7 +208,7 @@ class WorkerMetricsStore:
         assert batch_id == len(self.batch_metrics)
         self.batch_metrics.append(BatchMetrics(batch_id, start_timestamp=time.perf_counter()))
     
-    def on_batch_scheduled(self, batch_id: int, seq_metadata_list: List[SequenceMetadata]):
+    def on_batch_scheduled(self, batch_id: int, seq_exec_metadata_list: List[SequenceExecutionMetadata]):
         if not self.initial_memory_profiling_done:
             return
 
@@ -219,21 +219,21 @@ class WorkerMetricsStore:
         decode_kv_cache_tokens = 0  # Number of decode tokens in the KV cache while this batch is running (includes new tokens)
         prefill_batched_tokens = 0
         decode_batched_tokens = 0
-        num_requests = len(seq_metadata_list)
-        for seq_metadata in seq_metadata_list:
+        num_requests = len(seq_exec_metadata_list)
+        for seq_exec_metadata in seq_exec_metadata_list:
 
             if self.disagg_emulation:
                 if self.curr_batch_is_prefill is None:
-                    self.curr_batch_is_prefill = seq_metadata.is_prompt
+                    self.curr_batch_is_prefill = seq_exec_metadata.is_prompt
                 else:
-                    assert self.curr_batch_is_prefill == seq_metadata.is_prompt
+                    assert self.curr_batch_is_prefill == seq_exec_metadata.is_prompt
 
-            if seq_metadata.is_prompt:
-                prefill_kv_cache_tokens += seq_metadata.seq.get_prompt_len()  # We already allocated the full sequence in KV cache
-                prefill_batched_tokens += seq_metadata.num_prompt_tokens
+            if seq_exec_metadata.is_prompt:
+                prefill_kv_cache_tokens += seq_exec_metadata.seq.get_prompt_len()  # We already allocated the full sequence in KV cache
+                prefill_batched_tokens += seq_exec_metadata.num_prompt_tokens
             else:
-                decode_kv_cache_tokens += len(seq_metadata.seq.get_token_ids())
-                decode_batched_tokens += seq_metadata.num_output_tokens
+                decode_kv_cache_tokens += len(seq_exec_metadata.seq.get_token_ids())
+                decode_batched_tokens += seq_exec_metadata.num_output_tokens
         
         scheduled_timestamp = time.perf_counter()
 
@@ -247,10 +247,10 @@ class WorkerMetricsStore:
         )
 
         # print("Batch ID:", batch_id, "Scheduled at:", scheduled_timestamp)
-        # print("Sequences", [seq_metadata.seq.seq_id for seq_metadata in seq_metadata_list])
+        # print("Sequences", [seq_exec_metadata.seq.seq_id for seq_exec_metadata in seq_exec_metadata_list])
         # Sequence-level metrics
-        for seq_metadata in seq_metadata_list:
-            self.sequence_metrics[seq_metadata.seq.seq_id].schedule(batch_id, scheduled_timestamp)
+        for seq_exec_metadata in seq_exec_metadata_list:
+            self.sequence_metrics[seq_exec_metadata.seq.seq_id].schedule(batch_id, scheduled_timestamp)
     
     def on_batch_end(self, batch_id: int, finished_seq_ids: List[str]):
         if not self.initial_memory_profiling_done:

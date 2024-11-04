@@ -4,7 +4,7 @@ import torch
 from flashinfer import BatchPrefillWithPagedKVCacheWrapper, append_paged_kv_cache
 
 from sarathi.config import ModelConfig, ParallelConfig
-from sarathi.core.datatypes.sequence import SequenceMetadata
+from sarathi.core.datatypes.sequence import SequenceExecutionMetadata
 from sarathi.metrics.constants import OperationMetrics
 from sarathi.model_executor.attention.base_attention_wrapper import BaseAttentionWrapper
 
@@ -62,7 +62,7 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
     
     def begin_forward(
         self,
-        seq_metadata_list: List[SequenceMetadata],
+        seq_exec_metadata_list: List[SequenceExecutionMetadata],
     ) -> None:
         # The indptr tensor captures the location query tokens in the input tensor.
         # |<---------------------- num_valid_tokens ----------------------------------------------------->|
@@ -95,12 +95,12 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
         self.contains_prefill = False
         self.contains_decode = False
 
-        for seq_metadata in seq_metadata_list:
-            if not seq_metadata.is_prompt:
+        for seq_exec_metadata in seq_exec_metadata_list:
+            if not seq_exec_metadata.is_prompt:
                 continue
 
             # ONLY used for profiling
-            if seq_metadata.block_table is None:
+            if seq_exec_metadata.block_table is None:
                 self.is_profiling_iteration = True
                 # During memory profiling, the block tables are not initialized yet.
                 #  We will just skip the attention computation for now.
@@ -108,9 +108,9 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
 
             self.contains_prefill = True
 
-            prompt_chunk_len = seq_metadata.prompt_chunk_len
+            prompt_chunk_len = seq_exec_metadata.prompt_chunk_len
             processed_prompt_len = (
-                seq_metadata.seq.get_num_prompt_tokens_stage_processed()
+                seq_exec_metadata.seq.get_num_prompt_tokens_stage_processed()
             )
             current_total_len = processed_prompt_len + prompt_chunk_len
 
@@ -120,7 +120,7 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
             num_blocks_in_use = (
                 current_total_len + self.block_size - 1
             ) // self.block_size
-            prefill_kv_page_indices.extend(seq_metadata.block_table[:num_blocks_in_use])
+            prefill_kv_page_indices.extend(seq_exec_metadata.block_table[:num_blocks_in_use])
             prefill_kv_page_indptr.append(
                 prefill_kv_page_indptr[-1] + num_blocks_in_use
             )
@@ -128,22 +128,22 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
                 current_total_len % self.block_size or self.block_size
             )
 
-        for seq_metadata in seq_metadata_list:
-            if seq_metadata.is_prompt:
+        for seq_exec_metadata in seq_exec_metadata_list:
+            if seq_exec_metadata.is_prompt:
                 continue
 
-            if seq_metadata.block_table is None:
+            if seq_exec_metadata.block_table is None:
                 self.is_profiling_iteration = True
                 return
 
             self.contains_decode = True
 
-            context_len = seq_metadata.seq.get_len()
+            context_len = seq_exec_metadata.seq.get_len()
             # indptr for the prompt tokens in q/o tensor
             decode_qo_indptr.append(decode_qo_indptr[-1] + 1)
             # Compute the kv page indices for the prompt tokens.
             num_blocks_in_use = (context_len + self.block_size - 1) // self.block_size
-            decode_kv_page_indices.extend(seq_metadata.block_table[:num_blocks_in_use])
+            decode_kv_page_indices.extend(seq_exec_metadata.block_table[:num_blocks_in_use])
             decode_kv_page_indptr.append(decode_kv_page_indptr[-1] + num_blocks_in_use)
             decode_kv_last_page_len.append(
                 context_len % self.block_size or self.block_size

@@ -6,7 +6,7 @@ from sarathi.core.block_space_manager.block_space_manager_registry import (
     BlockSpaceManagerRegistry,
 )
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
-from sarathi.core.datatypes.sequence import Sequence, SequenceMetadata, SequenceScheduleMetadata
+from sarathi.core.datatypes.sequence import Sequence, SequenceExecutionMetadata, SequenceScheduleMetadata
 from sarathi.core.sequence_manager.base_sequence_manager import BaseSequenceManager
 
 
@@ -73,10 +73,10 @@ class WorkerSequenceManager(BaseSequenceManager):
         # but we don't need to do anything here on worker side
         pass
 
-    def get_seq_metadata_list(self, scheduler_outputs: SchedulerOutputs) -> List[SequenceMetadata]:
+    def get_seq_exec_metadata_list(self, scheduler_outputs: SchedulerOutputs) -> List[SequenceExecutionMetadata]:
         # This will extract the actual sequence object and block table
         return [
-            SequenceMetadata(
+            SequenceExecutionMetadata(
                 seq=self.seq_map[seq_id_metadata.seq_id],
                 block_table=self.block_manager.get_gpu_block_table(seq_id_metadata.seq_id),
                 prompt_chunk_len=seq_id_metadata.prompt_chunk_len,

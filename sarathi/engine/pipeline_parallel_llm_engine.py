@@ -9,7 +9,7 @@ import zmq
 from sarathi.config import SystemConfig
 from sarathi.core.datatypes.request_output import RequestOutput
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
-from sarathi.core.datatypes.sequence import SamplerOutputs, SequenceMetadata
+from sarathi.core.datatypes.sequence import SamplerOutputs, SequenceExecutionMetadata
 from sarathi.core.datatypes.step_inputs import StepInputs
 from sarathi.engine.base_llm_engine import BaseLLMEngine
 from sarathi.logger import init_logger
@@ -22,8 +22,8 @@ SCHEDULER_LOOP_DELAY = 0.01
 
 @dataclass
 class ScheduleStageOutputs:
-    ignored_seqs: List[SequenceMetadata]
-    seq_metadata_list: List[SequenceMetadata]
+    ignored_seqs: List[SequenceExecutionMetadata]
+    seq_exec_metadata_list: List[SequenceExecutionMetadata]
     scheduler_outputs: SchedulerOutputs
     start_time: float
 
@@ -123,14 +123,14 @@ class PipelineParallelLLMEngine(BaseLLMEngine):
             if scheduler_outputs.has_no_output():
                 continue
 
-            ignored_seqs, seq_metadata_list = self.seq_manager.on_schedule(
+            ignored_seqs, seq_exec_metadata_list = self.seq_manager.on_schedule(
                 scheduler_outputs
             )
 
             self.scheduler_output_queue.put(
                 ScheduleStageOutputs(
                     ignored_seqs,
-                    seq_metadata_list,
+                    seq_exec_metadata_list,
                     scheduler_outputs,
                     start_time,
                 )
@@ -148,7 +148,7 @@ class PipelineParallelLLMEngine(BaseLLMEngine):
                     )
                 )
 
-            self.metrics_store.on_schedule(seq_metadata_list, start_time, end_time)
+            self.metrics_store.on_schedule(seq_exec_metadata_list, start_time, end_time)
 
     @exit_on_error
     def _microbatch_watch_loop(self) -> None:
@@ -171,7 +171,7 @@ class PipelineParallelLLMEngine(BaseLLMEngine):
             all_request_outputs = self._on_step_completed(
                 scheduler_stage_output.scheduler_outputs,
                 scheduler_stage_output.ignored_seqs,
-                scheduler_stage_output.seq_metadata_list,
+                scheduler_stage_output.seq_exec_metadata_list,
                 sampler_outputs,
                 scheduler_stage_output.start_time,
             )

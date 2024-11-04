@@ -3,7 +3,7 @@ from typing import List, Optional, Tuple
 import torch
 
 from sarathi.config import ModelConfig, ParallelConfig
-from sarathi.core.datatypes.sequence import SequenceMetadata
+from sarathi.core.datatypes.sequence import SequenceExecutionMetadata
 from sarathi.model_executor.attention.base_attention_wrapper import BaseAttentionWrapper
 
 
@@ -26,7 +26,7 @@ class NoOpAttentionWrapper(BaseAttentionWrapper):
 
     def begin_forward(
         self,
-        seq_metadata_list: List[SequenceMetadata],
+        seq_exec_metadata_list: List[SequenceExecutionMetadata],
     ) -> None:
         pass
 
