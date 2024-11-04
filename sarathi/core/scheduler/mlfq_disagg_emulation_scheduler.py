@@ -1,4 +1,3 @@
-import copy
 from typing import Dict, List
 
 from sarathi.config import (
@@ -197,11 +196,13 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         queue: List[Sequence] = []
         for seqs in self.decode_queues:
             queue.extend(seqs)
+        
+        queue = list(filter(lambda seq: not seq.is_swapping_in(), queue))
     
         while queue:
             seq = queue.pop(0)
 
-            assert seq.is_paused() or seq.is_swapped_out()
+            assert seq.is_paused() or seq.is_swapped_out(), f"Sequence {seq.seq_id} is in an invalid state: {seq.get_status()}"
 
             def can_append_slot():
                 return self.block_manager.can_append_slot(seq)
@@ -250,7 +251,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                     self._begin_swap_in(seq)
                     begin_swap_in_seq_ids.append(seq.seq_id)
                 else:
-                    assert False, f"Sequence {seq.seq_id} is in an invalid state: {seq.state}"
+                    assert False, f"Sequence {seq.seq_id} is in an invalid state: {seq.get_status()}"
 
         self._update_priorities(running)
         

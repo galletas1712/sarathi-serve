@@ -119,10 +119,10 @@ class ZipfRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
         default=512, metadata={"help": "Minimum number of tokens."}
     )
     max_tokens: int = field(
-        default=4096, metadata={"help": "Maximum number of tokens."}
+        default=16384, metadata={"help": "Maximum number of tokens."}
     )
     prefill_to_decode_ratio: float = field(
-        default=0.5, metadata={"help": "Ratio of prefill tokens to decode tokens."}
+        default=2.0, metadata={"help": "Ratio of prefill tokens to decode tokens."}
     )
 
     @staticmethod

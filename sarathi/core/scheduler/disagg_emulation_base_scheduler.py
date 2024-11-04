@@ -1,4 +1,3 @@
-import enum
 import time
 from typing import List
 
@@ -52,7 +51,7 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
         running_prefills: List[Sequence] = []
         running_decodes: List[Sequence] = []
         for seq in self.running:
-            assert seq.is_paused()
+            assert seq.is_paused(), f"Sequence {seq.seq_id} is not paused, {seq.get_status()}"
 
             if not seq.prompt_stage_processing_finished:
                 running_prefills.append(seq)
@@ -64,6 +63,7 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
         print(f"Running prefills: {[seq.seq_id for seq in running_prefills]}")
         print(f"Running decodes: {[seq.seq_id for seq in running_decodes]}")
         gpu_metadata, cpu_metadata = self.block_manager.get_block_table_metadata()
+        print(f"Num free GPU blocks: {self.block_manager.allocators[BlockDevice.GPU].get_num_free_blocks()}")
         print(f"All GPU block table lens {gpu_metadata}")
         print(f"All CPU block table lens {cpu_metadata}")
 
@@ -106,7 +106,12 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
         self.running = self.policy.sort_by_priority(now, self.running)
         self.waiting = self.policy.sort_by_priority(now, self.waiting)
 
-        print("Number of waiting requests: ", len(self.waiting))
+        # Calculate num waiting just for print
+        num_waiting = 0
+        for seq in self.waiting:
+            if seq.arrival_time <= now:
+                num_waiting += 1
+        print("Number of waiting requests: ", num_waiting)
         print(f"Swapped out: {len(self.swapped_out)}, Swapped in: {len(self.swapped_in)}, Swapping in: {len(self.swapping_in)}")
         print(f"------ END SCHEDULER {self._iteration_id} -------")
 

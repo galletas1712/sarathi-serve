@@ -191,7 +191,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                     self._begin_swap_in(seq)
                     begin_swap_in_seq_ids.append(seq.seq_id)
                 else:
-                    assert False, f"Sequence {seq.seq_id} is in an invalid state: {seq.state}"
+                    assert False, f"Sequence {seq.seq_id} is in an invalid state: {seq.get_status()}"
         
         return (
             running,

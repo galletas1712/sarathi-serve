@@ -304,10 +304,10 @@ class FCFSDisaggEmulationSchedulerConfig(DisaggEmulationSchedulerConfig):
 @dataclass
 class MLFQDisaggEmulationSchedulerConfig(DisaggEmulationSchedulerConfig):
     quantums: List[int] = field(
-        default_factory=lambda: [128, 256, 512, 1024, 2048, 4096, 8192],
+        default_factory=lambda: [128, 256, 512, 1024],
     )
 
-    starvation_limit: Optional[int] = 256
+    starvation_limit: Optional[int] = 1024
 
     def get_quantums(self):
         return self.quantums
@@ -441,7 +441,7 @@ class SystemConfig:
     cache_config: CacheConfig = field(default_factory=CacheConfig)
     parallel_config: ParallelConfig = field(default_factory=ParallelConfig)
     scheduler_config: BaseSchedulerConfig = field(
-        default_factory=MLFQDisaggEmulationSchedulerConfig
+        default_factory=SarathiSchedulerConfig
     )
     metrics_config: MetricsConfig = field(default_factory=MetricsConfig)
 
@@ -455,7 +455,7 @@ class BaseEndpointConfig(ABC):
     cache_config: CacheConfig = field(default_factory=CacheConfig)
     parallel_config: ParallelConfig = field(default_factory=ParallelConfig)
     scheduler_config: BaseSchedulerConfig = field(
-        default_factory=MLFQDisaggEmulationSchedulerConfig
+        default_factory=SarathiSchedulerConfig
     )
     metrics_config: MetricsConfig = field(default_factory=MetricsConfig)
 

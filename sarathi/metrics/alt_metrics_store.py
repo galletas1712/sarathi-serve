@@ -1,10 +1,19 @@
 from dataclasses import dataclass
 import time
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from collections import deque
 
-from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
+import numpy as np
+
 from sarathi.core.datatypes.sequence import SequenceMetadata
+
+
+def calculate_percentile_values(data: List[float], percentiles: List[float] = [50, 90, 95, 99, 99.9, 100]) -> Dict[float, float]:
+    """Calculate multiple percentiles from list of values."""
+    if len(data) == 0:
+        return {}
+    return {p: float(np.percentile(data, p)) if p < 100 else max(data) for p in percentiles}
+
 
 @dataclass
 class SwapInterval:
@@ -23,6 +32,21 @@ class SwapInterval:
     finish_swap_in_timestamp: Optional[float] = None
     timestamp_offset: int = 0
     batch_offset: int = 0
+
+    def get_total_duration(self) -> float:
+        """Return total swap duration if swap is complete."""
+        assert (self.finish_swap_in_timestamp is not None and 
+            self.start_swap_out_timestamp is not None)
+
+        # NOTE: Calculating with offset
+        return self.finish_swap_in_timestamp - self.start_swap_out_timestamp - self.timestamp_offset
+    
+    def get_batch_duration(self) -> int:
+        """Return number of batches this swap spans if complete."""
+        assert (self.finish_swap_in_batch_id is not None and 
+            self.start_swap_out_batch_id is not None)
+
+        return self.finish_swap_in_batch_id - self.start_swap_out_batch_id - self.batch_offset
 
 
 @dataclass
@@ -139,6 +163,16 @@ class SequenceMetrics:
         if not self.batch_ids_scheduled:
             self.arrival_to_scheduled_delay = scheduled_timestamp - self.arrival_timestamp - self.total_offset
         self.batch_ids_scheduled.append(batch_id)
+
+    def get_swap_durations(self) -> List[float]:
+        """Get list of complete swap durations."""
+        return [interval.get_total_duration() for interval in self.swap_intervals 
+                if interval.finish_swap_in_timestamp is not None]
+
+    def get_swap_batch_durations(self) -> List[int]:
+        """Get list of swap batch spans."""
+        return [interval.get_batch_duration() for interval in self.swap_intervals 
+                if interval.finish_swap_in_batch_id is not None]
     
     
 class WorkerMetricsStore:
@@ -244,9 +278,10 @@ class WorkerMetricsStore:
                     delta = end_timestamp - max(seq_metrics_obj.arrival_timestamp, self.batch_metrics[-1].start_timestamp)
                     seq_metrics_obj.total_offset += delta
                     seq_metrics_obj.next_tbt_offset += delta
-                    if seq_metrics_obj._curr_swap_interval is not None:
-                        seq_metrics_obj._curr_swap_interval.timestamp_offset += delta
-                        seq_metrics_obj._curr_swap_interval.batch_offset += 1
+                    # assert seq_metrics_obj._curr_swap_interval is None
+                    # if seq_metrics_obj._curr_swap_interval is not None:
+                    #     seq_metrics_obj._curr_swap_interval.timestamp_offset += delta
+                    #     seq_metrics_obj._curr_swap_interval.batch_offset += 1
                 else:
                     # TODO: maybe keep track of idle time in decode (this excludes time between prefill and first decode token)?
                     pass
@@ -315,54 +350,79 @@ class WorkerMetricsStore:
         self.active_sequences = set()
         self.curr_batch_is_prefill = None
     
-    def plot(self):
-        print("Sequence metrics:")
+    def process_metrics(self) -> Dict[str, Any]:
+        metrics = {
+            "benchmark_metrics": {},
+            "sequence_metrics": {}
+        }
 
+        # Collect all TBTs and scheduling delays
         all_tbts = []
-        scheduling_delays = []
-
+        all_scheduling_delays = []
         for seq_metrics in self.sequence_metrics.values():
-            print("Decode length:", len(seq_metrics.batch_ids_scheduled))
-            print("TBT length:", len(seq_metrics.TBTs))
-            print("Mean TBT:", sum(seq_metrics.TBTs) / len(seq_metrics.TBTs))
-            print("Max TBT:", max(seq_metrics.TBTs))
-            e2e_time = (
-                self.batch_metrics[seq_metrics.batch_ids_scheduled[-1]].end_timestamp -
-                seq_metrics.arrival_timestamp - 
-                seq_metrics.total_offset
-           )
-            print("E2E time:", e2e_time)
-            print("Scheduling delay:", seq_metrics.arrival_to_scheduled_delay)
-            # print("Arrived at timestamp:", seq_metrics.arrival_timestamp)
-            # print("Scheduled at iteration with timestamp:", seq_metrics.batch_ids_scheduled[0], self.batch_metrics[seq_metrics.batch_ids_scheduled[0]].scheduled_timestamp)
-            print("Swaps:", seq_metrics.swap_intervals)
-            print()
-
             all_tbts.extend(seq_metrics.TBTs)
-            scheduling_delays.append(seq_metrics.arrival_to_scheduled_delay)
+            if seq_metrics.arrival_to_scheduled_delay is not None:
+                all_scheduling_delays.append(seq_metrics.arrival_to_scheduled_delay)
+
+        # Calculate benchmark-wide metrics
+        benchmark_metrics = metrics["benchmark_metrics"]
+        benchmark_metrics["qps"] = len(self.sequence_metrics) / (
+            self.batch_metrics[-1].end_timestamp - self.batch_metrics[0].start_timestamp
+        )
+
+        # TBT percentiles
+        benchmark_metrics["tbt"] = calculate_percentile_values(all_tbts)
+
+        # Scheduling delay percentiles
+        benchmark_metrics["scheduling_delay"] = calculate_percentile_values(all_scheduling_delays)
+
+        # Calculate per-sequence metrics
+        sequence_metrics = metrics["sequence_metrics"]
+        for seq_id, seq_metrics in self.sequence_metrics.items():
+            sequence_metrics[seq_id] = {}
+            seq_dict = sequence_metrics[seq_id]
+
+            # Batch counts
+            seq_dict["num_batches"] = len(seq_metrics.batch_ids_scheduled)
+            seq_dict["num_decode_batches"] = sum(1 for batch_id in seq_metrics.batch_ids_scheduled 
+                if not self.batch_metrics[batch_id].prefill_batched_tokens)
+
+            # Timing metrics
+            if seq_metrics.batch_ids_scheduled:
+                seq_dict["end_to_end_time"] = (
+                    self.batch_metrics[seq_metrics.batch_ids_scheduled[-1]].end_timestamp -
+                    seq_metrics.arrival_timestamp -
+                    seq_metrics.total_offset
+                )
+                
+                # Find first decode batch
+                first_decode_batch = None
+                for batch_id in seq_metrics.batch_ids_scheduled:
+                    if not self.batch_metrics[batch_id].prefill_batched_tokens:
+                        first_decode_batch = batch_id
+                        break
+                
+                assert first_decode_batch is not None
+                seq_dict["decode_time"] = (
+                    self.batch_metrics[seq_metrics.batch_ids_scheduled[-1]].end_timestamp -
+                    self.batch_metrics[first_decode_batch].start_timestamp
+                )
+
+            seq_dict["scheduling_delay"] = seq_metrics.arrival_to_scheduled_delay
+            
+            # TBT percentiles
+            seq_dict["tbt"] = calculate_percentile_values(seq_metrics.TBTs)
+
+            # Swap metrics
+            seq_dict["num_swaps"] = len(seq_metrics.swap_intervals)
+            # seq_dict["total_tokens_swapped"] = seq_metrics.get_total_tokens_swapped()
+            
+            # Swap duration percentiles
+            swap_durations = seq_metrics.get_swap_durations()
+            seq_dict["swap_duration"] = calculate_percentile_values(swap_durations)
+
+            # Swap batch duration percentiles
+            swap_duration_num_batches = seq_metrics.get_swap_batch_durations()
+            seq_dict["swap_duration_num_batches"] = calculate_percentile_values(swap_duration_num_batches)
         
-        print("Mean TBT:", sum(all_tbts) / len(all_tbts))
-        print("Median TBT:", sorted(all_tbts)[len(all_tbts) // 2])
-        print("95% TBT:", sorted(all_tbts)[int(0.95 * len(all_tbts))])
-        print("99% TBT:", sorted(all_tbts)[int(0.99 * len(all_tbts))])
-        print("99.9% TBT:", sorted(all_tbts)[int(0.999 * len(all_tbts))])
-        print("99.99% TBT:", sorted(all_tbts)[int(0.9999 * len(all_tbts))])
-        print("Mean scheduling delay:", sum(scheduling_delays) / len(scheduling_delays))
-        print("Median scheduling delay:", sorted(scheduling_delays)[len(scheduling_delays) // 2])
-        print("95% scheduling delay:", sorted(scheduling_delays)[int(0.95 * len(scheduling_delays))])
-        print("99% scheduling delay:", sorted(scheduling_delays)[int(0.99 * len(scheduling_delays))])
-        print("99.9% scheduling delay:", sorted(scheduling_delays)[int(0.999 * len(scheduling_delays))])
-        print("99.99% scheduling delay:", sorted(scheduling_delays)[int(0.9999 * len(scheduling_delays))])
-
-            # print("Total offset:", seq_metrics.total_offset)
-            # print("Arrival timestamp:", seq_metrics.arrival_timestamp)
-            # print("Timestamp of start batch:", self.batch_metrics[seq_metrics.batch_ids_scheduled[0]].start_timestamp)
-            # print("End timestamp of last batch:", self.batch_metrics[seq_metrics.batch_ids_scheduled[-1]].end_timestamp)
-            # print("Difference:", self.batch_metrics[seq_metrics.batch_ids_scheduled[-1]].end_timestamp - self.batch_metrics[seq_metrics.batch_ids_scheduled[0]].start_timestamp)
-
-
-        # print("Batch Metrics:")
-        # for batch_metrics in self.batch_metrics:
-            # print("Batch ID:", batch_metrics.batch_id, "PREFILL" if batch_metrics.prefill_batched_tokens > 0 else "decode")
-            # print("Total batch elapsed:", (batch_metrics.end_timestamp - batch_metrics.start_timestamp) * 1000)
-            # print()
+        return metrics

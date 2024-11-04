@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import time
@@ -276,6 +277,10 @@ class BenchmarkRunnerLauncher:
             self.aggregate_metric_store.plot()
         else:
             metric_store = self.runners[0].run()
-            metric_store.plot()
+            processed_metrics = metric_store.process_metrics()
+
+            # Write metric_store to output directory
+            with open(os.path.join(self.config.output_dir, "metrics.json"), "w") as f:
+                json.dump(processed_metrics, f, indent=2)
 
         wandb.finish()

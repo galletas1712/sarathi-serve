@@ -62,6 +62,8 @@ class BaseLLMEngine:
         self.config = config
         self._verify_args()
 
+        print(f"Scheduler config: {config.scheduler_config}")
+
         self.tokenizer = get_tokenizer(
             config.model_config.model,
             trust_remote_code=config.model_config.trust_remote_code,
@@ -202,18 +204,24 @@ class BaseLLMEngine:
 
     def _init_cache(self) -> None:
         """Profiles the memory usage and initializes the KV cache."""
-        # Get the maximum number of blocks that can be allocated on GPU.
-        num_gpu_blocks_across_workers = self._run_workers(
-            "profile_num_available_blocks",
-            get_all_outputs=True,
-            block_size=self.config.cache_config.block_size,
-            gpu_memory_utilization=self.config.worker_config.gpu_memory_utilization,
-        )
+        
+        if self.config.cache_config.num_gpu_blocks is None:
+            # Get the maximum number of blocks that can be allocated on GPU.
+            num_gpu_blocks_across_workers = self._run_workers(
+                "profile_num_available_blocks",
+                get_all_outputs=True,
+                block_size=self.config.cache_config.block_size,
+                gpu_memory_utilization=self.config.worker_config.gpu_memory_utilization,
+            )
 
-        # Since we use a shared centralized controller, we take the minimum
-        # number of blocks across all workers to make sure all the memory
-        # operators can be applied to all workers.
-        num_gpu_blocks = min(num_gpu_blocks_across_workers)
+            # Since we use a shared centralized controller, we take the minimum
+            # number of blocks across all workers to make sure all the memory
+            # operators can be applied to all workers.
+            num_gpu_blocks = min(num_gpu_blocks_across_workers)
+        else:
+            num_gpu_blocks = self.config.cache_config.num_gpu_blocks
+            logger.warning("Using user-provided number of GPU blocks. Skipping profiling!")
+        
         # FIXME(woosuk): Change to debug log.
         logger.info(f"# GPU blocks: {num_gpu_blocks}")
 
@@ -223,16 +231,21 @@ class BaseLLMEngine:
                 "Try increasing `gpu_memory_utilization` when "
                 "initializing the engine."
             )
-        max_blocks_per_request = math.ceil(
-            self.config.model_config.max_model_len / self.config.cache_config.block_size
-        )
-        if num_gpu_blocks < max_blocks_per_request:
-            raise ValueError(
-                f"Not enough available memory to schedule a request will maximum allowed length {self.config.model_config.max_model_len}. "
-                f"Need {max_blocks_per_request}, available {num_gpu_blocks} gpu blocks. "
-                f"Try decreasing `max_batch_size`, `max_model_len`."
-            )
-        self.config.cache_config.num_gpu_blocks = 512  # TODO: DANGER!!!! CHANGE!!!
+        # max_blocks_per_request = math.ceil(
+        #     self.config.model_config.max_model_len / self.config.cache_config.block_size
+        # )
+        # if num_gpu_blocks < max_blocks_per_request:
+        #     raise ValueError(
+        #         f"Not enough available memory to schedule a request will maximum allowed length {self.config.model_config.max_model_len}. "
+        #         f"Need {max_blocks_per_request}, available {num_gpu_blocks} gpu blocks. "
+        #         f"Try decreasing `max_batch_size`, `max_model_len`."
+        #     )
+        
+        self.config.cache_config.num_gpu_blocks = num_gpu_blocks
+
+        if self.config.cache_config.num_cpu_blocks is None:
+            logger.warning("Using the same number of CPU blocks as GPU blocks because CPU was not specified.")
+            self.config.cache_config.num_cpu_blocks = self.config.cache_config.num_gpu_blocks
 
         # Initialize the cache.
         self._run_workers(
@@ -372,8 +385,11 @@ class BaseLLMEngine:
             return []
 
         print(f"Iteration: {self.scheduler._iteration_id}")
-        for i, seqs in enumerate(self.scheduler.decode_queues):
-           print(f"Decode queue: {[seq.seq_id for seq in seqs]}")
+
+        if hasattr(self.scheduler, "decode_queues"):
+            for i, seqs in enumerate(self.scheduler.decode_queues):
+                print(f"Decode queue: {[seq.seq_id for seq in seqs]}")
+
         print(f"Running: {[meta.seq_id for meta in scheduler_outputs.scheduled_seq_id_metadata_list]}")
         if scheduler_outputs.swap_out_seq_ids:
             print(f"Swap out: {scheduler_outputs.swap_out_seq_ids}")
