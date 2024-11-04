@@ -2,7 +2,7 @@ import datetime
 from tqdm import tqdm
 from typing import List
 
-from sarathi.config import ModelConfig, ParallelConfig, FCFSDisaggEmulationSchedulerConfig, MetricsConfig, SystemConfig, ReplicaConfig
+from sarathi.config import ModelConfig, ParallelConfig, FCFSDisaggEmulationSchedulerConfig, MLFQDisaggEmulationSchedulerConfig, MetricsConfig, SystemConfig, ReplicaConfig
 from sarathi import LLMEngine, SamplingParams, RequestOutput
 
 
@@ -40,7 +40,7 @@ parallel_config = ParallelConfig(
     pipeline_parallel_size=1,
 )
 
-scheduler_config = FCFSDisaggEmulationSchedulerConfig()
+scheduler_config = MLFQDisaggEmulationSchedulerConfig()
 
 metrics_config = MetricsConfig(
     write_metrics=True,
@@ -109,4 +109,3 @@ for output in outputs:
     print("===========================================================")
 
 llm_engine.pull_worker_metrics()
-llm_engine.plot_metrics()

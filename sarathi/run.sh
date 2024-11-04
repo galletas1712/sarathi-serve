@@ -1,0 +1,18 @@
+# python3 benchmark/main.py --cache_config_num_gpu_blocks=2048 --poisson_request_interval_generator_config_qps=0.1 --scheduler_config_type=FCFS_DISAGG_EMULATION
+python3 benchmark/main.py --cache_config_num_gpu_blocks=2048 --poisson_request_interval_generator_config_qps=0.1 --scheduler_config_type=MLFQ_DISAGG_EMULATION
+# python3 benchmark/main.py --cache_config_num_gpu_blocks=2048 --poisson_request_interval_generator_config_qps=0.2 --scheduler_config_type=FCFS_DISAGG_EMULATION
+# python3 benchmark/main.py --cache_config_num_gpu_blocks=2048 --poisson_request_interval_generator_config_qps=0.2 --scheduler_config_type=MLFQ_DISAGG_EMULATION
+# python3 benchmark/main.py --cache_config_num_gpu_blocks=2048 --poisson_request_interval_generator_config_qps=0.3 --scheduler_config_type=FCFS_DISAGG_EMULATION
+# python3 benchmark/main.py --cache_config_num_gpu_blocks=2048 --poisson_request_interval_generator_config_qps=0.3 --scheduler_config_type=MLFQ_DISAGG_EMULATION
+# python3 benchmark/main.py --cache_config_num_gpu_blocks=2048 --poisson_request_interval_generator_config_qps=0.4 --scheduler_config_type=FCFS_DISAGG_EMULATION
+# python3 benchmark/main.py --cache_config_num_gpu_blocks=2048 --poisson_request_interval_generator_config_qps=0.4 --scheduler_config_type=MLFQ_DISAGG_EMULATION
+# python3 benchmark/main.py --cache_config_num_gpu_blocks=2048 --poisson_request_interval_generator_config_qps=0.5 --scheduler_config_type=FCFS_DISAGG_EMULATION
+# python3 benchmark/main.py --cache_config_num_gpu_blocks=2048 --poisson_request_interval_generator_config_qps=0.5 --scheduler_config_type=MLFQ_DISAGG_EMULATION
+# python3 benchmark/main.py --cache_config_num_gpu_blocks=4096 --poisson_request_interval_generator_config_qps=0.2 --scheduler_config_type=FCFS_DISAGG_EMULATION
+# python3 benchmark/main.py --cache_config_num_gpu_blocks=4096 --poisson_request_interval_generator_config_qps=0.2 --scheduler_config_type=MLFQ_DISAGG_EMULATION
+# python3 benchmark/main.py --cache_config_num_gpu_blocks=4096 --poisson_request_interval_generator_config_qps=0.4 --scheduler_config_type=FCFS_DISAGG_EMULATION
+# python3 benchmark/main.py --cache_config_num_gpu_blocks=4096 --poisson_request_interval_generator_config_qps=0.4 --scheduler_config_type=MLFQ_DISAGG_EMULATION
+# python3 benchmark/main.py --cache_config_num_gpu_blocks=4096 --poisson_request_interval_generator_config_qps=0.6 --scheduler_config_type=FCFS_DISAGG_EMULATION
+# python3 benchmark/main.py --cache_config_num_gpu_blocks=4096 --poisson_request_interval_generator_config_qps=0.6 --scheduler_config_type=MLFQ_DISAGG_EMULATION
+# python3 benchmark/main.py --cache_config_num_gpu_blocks=4096 --poisson_request_interval_generator_config_qps=0.8 --scheduler_config_type=FCFS_DISAGG_EMULATION
+# python3 benchmark/main.py --cache_config_num_gpu_blocks=4096 --poisson_request_interval_generator_config_qps=0.8 --scheduler_config_type=MLFQ_DISAGG_EMULATION
