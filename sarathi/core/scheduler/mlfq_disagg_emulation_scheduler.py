@@ -43,7 +43,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         return next_num_tokens
 
     def _schedule_prefills(self, running_prefills: List[Sequence], running_decodes: List[Sequence], now: float):
-        # NOTE: both arrays are already sorted in priority order
+        # NOTE: Both lists sorted in FCFS order 
         running = [] # NOTE: running decodes, doesn't strictly have to come first in order
         ignored_seq_ids = []
         swap_out_seq_ids = []
@@ -92,10 +92,11 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 ignored_seq_ids.append(seq.seq_id)
                 continue
 
-            # The total number of sequences in the RUNNING state should not
-            # exceed the maximum number of sequences.
-            if len(running) >= self.scheduler_config.max_num_seqs:  # NOTE: running here will already incldue decodes, which is great
-                break
+            # NOTE: Ignoring this for now
+            # # The total number of sequences in the RUNNING state should not
+            # # exceed the maximum number of sequences.
+            # if len(running) >= self.scheduler_config.max_num_seqs:  # NOTE: running here will already incldue decodes, which is great
+            #     break
 
             # check if we can fit the prefill in the batch
             next_num_prefill_tokens = self._get_seq_next_num_prefill_tokens(
@@ -111,8 +112,10 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             running_decodes_removed = []
             decodes_to_swap_out = []
             while self.block_manager.num_blocks_remaining_after(num_required_blocks, BlockDevice.GPU) < 0:
+                if not queue:
+                    break
                 decode_seq = queue[-1]
-                num_blocks_allocated = self.block_manager.get_num_blocks_allocated(decode_seq.seq_id, BlockDevice.GPU)
+                num_blocks_allocated = self.block_manager.num_blocks_allocated(decode_seq.seq_id, BlockDevice.GPU)
                 total_cpu_blocks_required += num_blocks_allocated
                 if self.block_manager.num_blocks_remaining_after(total_cpu_blocks_required, BlockDevice.CPU) < 0:
                     break
@@ -121,12 +124,14 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 running_decodes_removed.append(decode_seq)
                 queue.pop()
             
-            if num_required_blocks > 0:
+            if self.block_manager.num_blocks_remaining_after(num_required_blocks, BlockDevice.GPU) < 0:
                 # Restore state
                 queue.extend(reversed(running_decodes_removed))
                 break
 
-            swap_out_seq_ids.extend(decodes_to_swap_out)
+            for seq in decodes_to_swap_out:
+                self._swap_out(seq)
+            swap_out_seq_ids.extend(seq.seq_id for seq in decodes_to_swap_out)
         
             seq = self.waiting.pop(0)
             self._allocate(seq)
@@ -144,7 +149,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             running,
             ignored_seq_ids,
             [],
-            [],
+            swap_out_seq_ids,
             [],
             scheduled_seq_id_metadata_list
         )
@@ -217,6 +222,8 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         queue = list(filter(lambda seq: not seq.is_swapping_in(), queue))
         for seq in queue:
             assert seq.prompt_processing_finished and seq.prompt_stage_processing_finished
+        
+        return queue
     
     def _schedule_decodes(self, running_decodes: List[Sequence], now: float):
         running = []
