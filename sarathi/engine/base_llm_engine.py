@@ -500,6 +500,7 @@ class BaseLLMEngine:
     def _unbind_zmq_sockets(self):
         self.enqueue_socket.close()
         self.output_socket.close()
+        self.notify_socket.close()
 
     def terminate(self) -> None:
         self._unbind_zmq_sockets()

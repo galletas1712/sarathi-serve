@@ -64,20 +64,21 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
         print(f"Running decodes: {[seq.seq_id for seq in running_decodes]}")
         gpu_metadata, cpu_metadata = self.block_manager.get_block_table_metadata()
         print(f"Num free GPU blocks: {self.block_manager.allocators[BlockDevice.GPU].get_num_free_blocks()}")
+        print(f"Num free CPU blocks: {self.block_manager.allocators[BlockDevice.CPU].get_num_free_blocks()}")
         print(f"All GPU block table lens {gpu_metadata}")
         print(f"All CPU block table lens {cpu_metadata}")
 
         prefill_scheduled_success = False
 
-        # NOTE: We will never schedule a prefill if there's decode sequences swapping in/out - we want to profile this
-        # We should also never schedule a prefill if there are outstanding swapped out requests - this emulates FCFS backpressure behavior
+        # NOTE: We will never schedule a prefill if there's decode sequences swapping in - we want to profile this
         # TODO: implement keeping KV cache resident in CPU memory always to mitigate potential issues with this
-        # Schedule prefill!
-        if (
-            not self.swapping_in and
-            not self.swapped_out
-        ):
-            # NOTE: we keep decodes in memory, but don't add it to scheduled_seq_id_metadata list so it doesn't get run
+
+        # Schedule prefill
+        if not self.swapping_in:
+            # We will swap out decodes to make room for prefills. They'll remain swapped out until the next iteration
+            # In FCFS, they'll be brought back in immediately (begin swap in)
+            # In MLFQ, the new requests will take priority
+            # NOTE: If we don't add a sequence to scheduled_seq_id_metadata list so it doesn't get run
             # NOTE: _schedule_prefills should also schedule running prefills
             (
                 running,

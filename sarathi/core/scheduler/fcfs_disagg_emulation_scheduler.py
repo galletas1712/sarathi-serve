@@ -46,6 +46,17 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         return next_num_tokens
     
     def _schedule_prefills(self, running_prefills: List[Sequence], running_decodes: List[Sequence], now: float):
+        if self.swapped_out:
+            # There are requests currently swapped ot, so we can't schedule any new requests
+            return (
+                running_decodes + running_prefills,
+                [],
+                [],
+                [],
+                [],
+                [],
+            )
+
         running = [*running_decodes] # NOTE: running decodes, doesn't strictly have to come first in order
         ignored_seq_ids = []
         scheduled_seq_id_metadata_list = []
