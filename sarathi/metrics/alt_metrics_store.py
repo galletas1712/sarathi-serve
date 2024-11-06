@@ -461,4 +461,8 @@ class WorkerMetricsStore:
             swap_duration_num_batches = seq_metrics.get_swap_batch_durations()
             seq_dict["swap_duration_num_batches"] = calculate_percentile_values(swap_duration_num_batches)
         
+        benchmark_metrics["e2e_time"] = calculate_percentile_values([
+            seq_metrics["end_to_end_time"] for seq_metrics in sequence_metrics.values()
+        ])
+
         return metrics
