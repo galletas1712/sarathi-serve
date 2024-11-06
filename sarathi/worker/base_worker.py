@@ -255,7 +255,10 @@ class BaseWorker:
             self.seq_manager.mark_swap_in_finished(finished_swap_in_seq_ids)
             self.notify_socket.send_pyobj(finished_swap_in_seq_ids)
 
+            start_engine_scheduler = time.perf_counter()
             step_inputs = self.enqueue_socket.recv_pyobj()
+            end_engine_scheduler = time.perf_counter()
+            self.metrics_store.add_engine_scheduler_latency(end_engine_scheduler - start_engine_scheduler)
 
             if step_inputs is None:
                 continue

@@ -94,6 +94,11 @@ class SequenceMetrics:
     TBTs: List[float]
     arrival_to_scheduled_delay: Optional[float]
 
+    is_prefill: bool
+    last_prefill_batch_id: Optional[int]
+    prefill_done_to_first_decode_delay: Optional[float]
+    arrival_to_first_decode_delay: Optional[float]
+
     next_tbt_offset: float
     total_offset: float
 
@@ -103,6 +108,11 @@ class SequenceMetrics:
         self.swap_intervals: List[SwapInterval] = []
         self.batch_ids_scheduled: List[int] = []
         self.TBTs: List[float] = []
+
+        self.is_prefill = True
+        self.last_prefill_batch_id = None
+        self.prefill_done_to_first_decode_delay = None
+        self.arrival_to_first_decode_delay = None
 
         self.next_tbt_offset = 0
         self.total_offset = 0
@@ -161,6 +171,7 @@ class SequenceMetrics:
 
     def schedule(self, batch_id: int, scheduled_timestamp: float):
         if not self.batch_ids_scheduled:
+            assert self.total_offset == self.next_tbt_offset
             self.arrival_to_scheduled_delay = scheduled_timestamp - self.arrival_timestamp - self.total_offset
         self.batch_ids_scheduled.append(batch_id)
 
@@ -187,6 +198,7 @@ class WorkerMetricsStore:
         self.initial_memory_profiling_done = False
         self.batch_metrics: List[BatchMetrics] = []
         self.sequence_metrics: Dict[str, SequenceMetrics] = {}
+        self.engine_scheduler_latencies: List[float] = []
 
         self.disagg_emulation = disagg_emulation
         self.arrived_sequences_queue = deque()
@@ -286,16 +298,28 @@ class WorkerMetricsStore:
                     # TODO: maybe keep track of idle time in decode (this excludes time between prefill and first decode token)?
                     pass
             else:
-                if not self.curr_batch_is_prefill and len(seq_metrics_obj.batch_ids_scheduled) > 1:
-                    seq_metrics_obj.TBTs.append(
+                # NOTE: DANGER: if prefills and decodes are in the same batch, this will be wrong!
+                if self.curr_batch_is_prefill:
+                    seq_metrics_obj.last_prefill_batch_id = batch_id
+                else:
+                    delay = (
                         end_timestamp - 
                         # NOTE: assumes batch IDs are just the indices of batch_metrics
                         self.batch_metrics[seq_metrics_obj.batch_ids_scheduled[-2]].end_timestamp -
                         seq_metrics_obj.next_tbt_offset
                     )
+                    if seq_metrics_obj.is_prefill:
+                        # Corresponds to first decode
+                        seq_metrics_obj.prefill_done_to_first_decode_delay = delay
+                        seq_metrics_obj.arrival_to_first_decode_delay = end_timestamp - seq_metrics_obj.arrival_timestamp - seq_metrics_obj.total_offset
+                        seq_metrics_obj.is_prefill = False
+                    else:
+                        # Corresponds to subsequent decodes
+                        seq_metrics_obj.TBTs.append(delay)
 
+                # Reset offset since we were scheduled this batch
                 seq_metrics_obj.next_tbt_offset = 0
-
+        
         for finished_seq_id in finished_seq_ids:
             self.active_sequences.remove(finished_seq_id)
         
@@ -341,6 +365,9 @@ class WorkerMetricsStore:
         )
         self.sequence_metrics[seq_id].finish_swap_in(self.batch_metrics[-1].batch_id, end_timestamp)
     
+    def add_engine_scheduler_latency(self, latency: float):
+        self.engine_scheduler_latencies.append(latency)
+    
     def mark_initial_memory_profiling_done(self):
         self.initial_memory_profiling_done = True
     
@@ -349,6 +376,7 @@ class WorkerMetricsStore:
         self.sequence_metrics = {}
         self.active_sequences = set()
         self.curr_batch_is_prefill = None
+        self.engine_scheduler_latencies = []
     
     def process_metrics(self) -> Dict[str, Any]:
         metrics = {
@@ -358,11 +386,11 @@ class WorkerMetricsStore:
 
         # Collect all TBTs and scheduling delays
         all_tbts = []
-        all_scheduling_delays = []
+        all_arrival_to_scheduled_delays = []
         for seq_metrics in self.sequence_metrics.values():
             all_tbts.extend(seq_metrics.TBTs)
             if seq_metrics.arrival_to_scheduled_delay is not None:
-                all_scheduling_delays.append(seq_metrics.arrival_to_scheduled_delay)
+                all_arrival_to_scheduled_delays.append(seq_metrics.arrival_to_scheduled_delay)
 
         # Calculate benchmark-wide metrics
         benchmark_metrics = metrics["benchmark_metrics"]
@@ -373,8 +401,16 @@ class WorkerMetricsStore:
         # TBT percentiles
         benchmark_metrics["tbt"] = calculate_percentile_values(all_tbts)
 
+        benchmark_metrics["prefill_done_to_first_decode_delay"] = calculate_percentile_values(
+            [seq_metrics.prefill_done_to_first_decode_delay for seq_metrics in self.sequence_metrics.values()])
+
+        benchmark_metrics["arrival_to_first_decode_delay"] = calculate_percentile_values(
+            [seq_metrics.arrival_to_first_decode_delay for seq_metrics in self.sequence_metrics.values()])
+
         # Scheduling delay percentiles
-        benchmark_metrics["scheduling_delay"] = calculate_percentile_values(all_scheduling_delays)
+        benchmark_metrics["arrival_to_scheduled_delay"] = calculate_percentile_values(all_arrival_to_scheduled_delays)
+
+        benchmark_metrics["engine_scheduler_latency"] = calculate_percentile_values(self.engine_scheduler_latencies)
 
         # Calculate per-sequence metrics
         sequence_metrics = metrics["sequence_metrics"]
@@ -408,7 +444,7 @@ class WorkerMetricsStore:
                     self.batch_metrics[first_decode_batch].start_timestamp
                 )
 
-            seq_dict["scheduling_delay"] = seq_metrics.arrival_to_scheduled_delay
+            seq_dict["arrival_to_scheduled_delay"] = seq_metrics.arrival_to_scheduled_delay
             
             # TBT percentiles
             seq_dict["tbt"] = calculate_percentile_values(seq_metrics.TBTs)
