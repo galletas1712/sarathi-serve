@@ -199,7 +199,7 @@ class BaseSchedulerConfig(BasePolyConfig):
 @dataclass
 class SarathiSchedulerConfig(BaseSchedulerConfig):
     chunk_size: int = field(
-        default=512, metadata={"help": "Size of each chunk for Sarathi scheduler."}
+        default=2048, metadata={"help": "Size of each chunk for Sarathi scheduler."}
     )
     enable_dynamic_chunking_schedule: bool = field(
         default=False, metadata={"help": "Enable dynamic chunking schedule."}
@@ -234,7 +234,7 @@ class SarathiSchedulerConfig(BaseSchedulerConfig):
 @dataclass
 class DisaggEmulationSchedulerConfig(BaseSchedulerConfig):
     chunk_size: int = field(
-        default=512, metadata={"help": "Size of each chunk for disagg emulation scheduler."}
+        default=2048, metadata={"help": "Size of each chunk for disagg emulation scheduler."}
     )
     uses_chunked_prefill: bool = field(default=True)
 
@@ -258,7 +258,7 @@ class MLFQDisaggEmulationSchedulerConfig(DisaggEmulationSchedulerConfig):
         default_factory=lambda: [128, 256, 512, 1024],
     )
 
-    starvation_limit: Optional[int] = 1024
+    starvation_limit: Optional[int] = 512
 
     def get_quantums(self):
         return self.quantums

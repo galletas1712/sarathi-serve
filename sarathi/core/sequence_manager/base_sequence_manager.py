@@ -159,6 +159,7 @@ class BaseSequenceManager(ABC):
         
         return finished_seq_ids
 
+    @synchronized
     def mark_swap_in_finished(self, finished_swap_in_seq_ids: List[str]) -> None:
         for seq_id in finished_swap_in_seq_ids:
             self._finish_swap_in_seq(seq_id)
