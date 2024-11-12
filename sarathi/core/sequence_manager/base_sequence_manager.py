@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
 
 from sarathi.config import SystemConfig
-from sarathi.config import RollingPreemptionProfilingSchedulerConfig
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
 from sarathi.core.datatypes.sequence import (
     SamplerOutput,
@@ -110,9 +109,9 @@ class BaseSequenceManager(ABC):
         if not seq.is_prompt_processing_finished():
             return
 
-        if not isinstance(self.config.scheduler_config, RollingPreemptionProfilingSchedulerConfig):
-            seq.append_token_id(sample.output_token)
-            self._on_append_token(seq)
+        seq.append_token_id(sample.output_token)
+        self._on_append_token(seq)
+
         # this function will update the seq status
         # to finished if the stop condition is met
         seq.check_stop()

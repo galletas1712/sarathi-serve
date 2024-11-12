@@ -11,7 +11,7 @@ from sarathi.core.datatypes.comm_info import CommInfo
 from sarathi.core.datatypes.request_output import RequestOutput
 from sarathi.core.datatypes.sampling_params import SamplingParams
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
-from sarathi.core.datatypes.sequence import SamplerOutputs, Sequence
+from sarathi.core.datatypes.sequence import SamplerOutputs, DecodeableSequence, Sequence
 from sarathi.core.datatypes.step_inputs import StepInputs
 from sarathi.core.scheduler.scheduler_registry import SchedulerRegistry
 from sarathi.core.sequence_manager.engine_sequence_manager import EngineSequenceManager
@@ -280,7 +280,7 @@ class BaseLLMEngine:
             )
             self.scheduler.on_step_completed()
 
-        return [RequestOutput.from_seq(seq) for seq in ignored_seqs + executed_seqs]
+        return [RequestOutput.from_decodeable_seq(seq) for seq in ignored_seqs + executed_seqs]
 
     def get_model_config(self) -> ModelConfig:
         return self.config.model_config
@@ -323,7 +323,7 @@ class BaseLLMEngine:
         block_size = self.config.cache_config.block_size
         eos_token_id = self.tokenizer.eos_token_id
 
-        seq = Sequence(
+        seq_init_args = [
             seq_id,
             prompt,
             prompt_token_ids,
@@ -331,14 +331,21 @@ class BaseLLMEngine:
             eos_token_id,
             arrival_time,
             sampling_params,
-        )
+        ]
+
+        seq = Sequence(*seq_init_args)
+        decodeable_seq = DecodeableSequence(*seq_init_args)
+
         # Add the sequence to the scheduler.
-        self.seq_manager.add_seq(seq)
+        self.seq_manager.add_seq(decodeable_seq)
+
         # we create a copy of the seq so that the workers
         # receive an unmodified version of the seq
         # which is unaffected by the engine's actions
         self._append_new_seq(copy.deepcopy(seq))
-        self.scheduler.add_seq(seq)
+
+        # NOTE: The scheduler and sequence manager should share the same instance
+        self.scheduler.add_seq(decodeable_seq)
 
     @synchronized
     def _append_new_seq(self, seq: Sequence) -> None:

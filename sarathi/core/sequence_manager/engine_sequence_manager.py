@@ -25,7 +25,7 @@ class EngineSequenceManager(BaseSequenceManager):
             detokenize_incrementally(
                 self.tokenizer,
                 all_input_ids=seq.get_all_token_ids(),
-                prev_tokens=seq.tokens,
+                prev_tokens=seq.tokens_decoded_so_far,
                 prefix_offset=seq.prefix_offset,
                 read_offset=seq.read_offset,
                 skip_special_tokens=True,

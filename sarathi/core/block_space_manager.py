@@ -33,7 +33,7 @@ class BlockAllocator:
         # Initialize the free blocks.
         self.__free_blocks: List[BlockNumber] = []
         for i in reversed(range(num_blocks)):
-            self.free_blocks.append(i)
+            self.__free_blocks.append(i)
     
     @property
     def num_total_blocks(self) -> int:
@@ -72,8 +72,8 @@ class BlockSpaceManager:
 
         self.watermark_blocks = int(watermark * num_gpu_blocks)
         self.allocators = {
-            BlockDevice.GPU: BlockAllocator(block_size, num_gpu_blocks),
-            BlockDevice.CPU: BlockAllocator(block_size, num_cpu_blocks),
+            BlockDevice.GPU: BlockAllocator(num_gpu_blocks),
+            BlockDevice.CPU: BlockAllocator(num_cpu_blocks),
         }
         # Mapping: seq_id -> BlockTable.
         self.block_tables: Dict[str, Dict[str, BlockTable]] = {}
@@ -96,7 +96,7 @@ class BlockSpaceManager:
                 total_blocks_in_block_table += self.num_blocks_allocated(seq_id, device)
             
             # print(f"Total blocks in block table: {total_blocks_in_block_table}, total blocks: {self.allocators[device].num_blocks}, num free blocks: {self.allocators[device].get_num_free_blocks()}")
-            assert total_blocks_in_block_table == self.allocators[device].num_blocks - self.allocators[device].get_num_free_blocks()
+            assert total_blocks_in_block_table == self.allocators[device].num_total_blocks - self.allocators[device].get_num_free_blocks()
         
     def can_allocate(self, seq: Sequence, device: BlockDevice = BlockDevice.GPU) -> bool:
         assert isinstance(seq, Sequence)
@@ -191,15 +191,13 @@ class BlockSpaceManager:
         assert isinstance(seq_id, str)
         if BlockDevice.GPU not in self.block_tables[seq_id]:
             return []
-        block_table = self.block_tables[seq_id][BlockDevice.GPU]
-        return [block.block_number for block in block_table]  # TODO: make into generator instead?
+        return self.block_tables[seq_id][BlockDevice.GPU]
 
     def get_cpu_block_table(self, seq_id: str) -> List[int]:
         assert isinstance(seq_id, str)
         if BlockDevice.CPU not in self.block_tables[seq_id]:
             return []
-        block_table = self.block_tables[seq_id][BlockDevice.CPU]
-        return [block.block_number for block in block_table]  # TODO: make into generator instead?
+        return self.block_tables[seq_id][BlockDevice.CPU]
     
     def get_block_table_metadata(self) -> List[Tuple[int, int]]:
         result_gpu = []
@@ -252,7 +250,7 @@ class BlockSpaceManager:
 
         for cpu_block in self.block_tables[seq_id][BlockDevice.CPU]:
             gpu_block = self.allocators[BlockDevice.GPU].allocate()
-            swap_in_mapping.append((cpu_block.block_number, gpu_block.block_number))
+            swap_in_mapping.append((cpu_block, gpu_block))
             self.block_tables[seq_id][BlockDevice.GPU].append(gpu_block)
         
         self.swap_in_mapping[seq_id] = swap_in_mapping
@@ -282,7 +280,7 @@ class BlockSpaceManager:
 
         for gpu_block in self.block_tables[seq_id][BlockDevice.GPU]:
             cpu_block = self.allocators[BlockDevice.CPU].allocate()
-            swap_out_mapping.append((gpu_block.block_number, cpu_block.block_number))
+            swap_out_mapping.append((gpu_block, cpu_block))
             self.block_tables[seq_id][BlockDevice.CPU].append(cpu_block)
         
         self.swap_out_mapping[seq_id] = swap_out_mapping

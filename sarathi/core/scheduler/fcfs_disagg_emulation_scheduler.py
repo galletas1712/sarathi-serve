@@ -188,7 +188,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                     )
                 elif seq.is_swapped_out():
                     print(f"Iteration {self._iteration_id}: Swapping in {seq.seq_id}")
-                    assert self.block_manager.can_swap_in_and_append_slot(seq.seq_id, len(seq.logical_token_blocks))
+                    assert self.block_manager.can_swap_in_and_append_slot(seq.seq_id, seq.get_num_logical_blocks())
                     self._begin_swap_in(seq)
                     begin_swap_in_seq_ids.append(seq.seq_id)
                 else:

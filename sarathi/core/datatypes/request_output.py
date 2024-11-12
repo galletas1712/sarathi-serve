@@ -26,7 +26,7 @@ class RequestOutput:
     finish_reason: Optional[str] = None
 
     @classmethod
-    def from_seq(cls, seq: DecodeableSequence) -> "RequestOutput":
+    def from_decodeable_seq(cls, seq: DecodeableSequence) -> "RequestOutput":
         return cls(
             seq.seq_id,
             seq.prompt,

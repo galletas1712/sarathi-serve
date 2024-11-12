@@ -1,11 +1,9 @@
 """Sequence and its related classes."""
 
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import List, Optional
 
-from numpy import copy
-
-from sarathi.core.datatypes.block import LogicalTokenBlock
 from sarathi.core.datatypes.sampling_params import SamplingParams
 from sarathi.core.datatypes.sequence_state import SequenceState
 from sarathi.core.datatypes.sequence_status import SequenceStatus
@@ -73,7 +71,7 @@ class SequenceBase:
     def sampling_params(self) -> SamplingParams:
         return self._init_params.sampling_params
     
-    def _coalesce_prompt_and_output_tokens_for_recompute(self, output_token_ids: List[int]):
+    def _append_output_tokens_to_prompt_tokens(self, output_token_ids: List[int]):
         self._init_params = SequenceInitParams(
             seq_id=self.seq_id,
             prompt=self.prompt,
@@ -124,11 +122,10 @@ class Sequence(SequenceBase):
         self.__num_free_slots_last_block = 0
 
         self.__state = SequenceState(seq_id, arrival_time, len(prompt_token_ids))
-    
-    # Create logical token for prefill right after init
-    def __post_init__(self):
-        self.__create_logical_blocks_for_tokens(self.get_prompt_len())
 
+        # We need to create the logical blocks for the prompt tokens right away.
+        self.__create_logical_blocks_for_tokens(self.get_prompt_len())
+    
     #################### Derived properties. Everything returned is a copy/cannot be used to alter the state of the sequence. ####################
 
     # Lengths
@@ -172,15 +169,15 @@ class Sequence(SequenceBase):
     # Token IDs
 
     def get_output_token_ids(self) -> List[int]:
-        return copy.deepcopy(self.__output_token_ids)
+        return deepcopy(self.__output_token_ids)
     
     def get_all_token_ids(self) -> List[int]:
         return self.prompt_token_ids + self.__output_token_ids
 
     def get_last_token_id(self) -> int:
-        if not self.output_token_ids:
+        if not self.__output_token_ids:
             return self.prompt_token_ids[-1]
-        return self.output_token_ids[-1]
+        return self.__output_token_ids[-1]
     
     #################### Update operations ####################
 
@@ -198,31 +195,35 @@ class Sequence(SequenceBase):
             return
         
         # Now, create as many blocks as necessary
+        assert self.__num_free_slots_last_block == 0
         num_blocks_to_add = (num_tokens_to_add + self.block_size - 1) // self.block_size
         self.__num_logical_blocks += num_blocks_to_add
-        self.__num_free_slots_last_block = self.block_size - (num_tokens_to_add % self.block_size)
+        if num_tokens_to_add % self.block_size == 0:
+            self.__num_free_slots_last_block = 0
+        else:
+            self.__num_free_slots_last_block = self.block_size - (num_tokens_to_add % self.block_size)
 
     # Public
      
     def update_prompt_tokens_processed(self, num_tokens: int) -> None:
-        assert not self.prompt_processing_finished
+        assert not self.is_prompt_processing_finished()
         assert num_tokens > 0
 
         self.__num_prompt_tokens_processed += num_tokens
-        assert self.num_prompt_tokens_processed <= len(self.prompt_token_ids)
+        assert self.__num_prompt_tokens_processed <= len(self.prompt_token_ids)
 
     def append_token_id(
         self,
         token_id: int,
     ) -> None:
-        assert self.prompt_processing_finished
+        assert self.is_prompt_processing_finished()
         self.__output_token_ids.append(token_id)
         self.__create_logical_blocks_for_tokens(1)
     
     def reset_for_recompute(self):
         self.set_status(SequenceStatus.WAITING)
         self.__num_prompt_tokens_processed = 0
-        self._coalesce_prompt_and_output_tokens_for_recompute(self.__output_token_ids)
+        self._append_output_tokens_to_prompt_tokens(self.__output_token_ids)
         self.__output_token_ids = []
         # No need to reset logical blocks here
     

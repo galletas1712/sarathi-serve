@@ -38,8 +38,8 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
             logger.debug(f"(Iteration: {self._iteration_id}) Moving swapped in request {seq.seq_id} into running list")
         
         # Sort both waiting and running queues
-        self.running = sorted(self.running, key=lambda seq: self.get_priority(now, seq), reverse=True)
-        self.waiting = sorted(self.waiting, key=lambda seq: self.get_priority(now, seq), reverse=True)
+        self.running = sorted(self.running, key=lambda seq: now - seq.arrival_time, reverse=True)
+        self.waiting = sorted(self.waiting, key=lambda seq: now - seq.arrival_time, reverse=True)
 
         # Get running prefills and running decodes
         running_prefills: List[Sequence] = []
@@ -47,7 +47,7 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
         for seq in self.running:
             assert seq.is_paused(), f"Sequence {seq.seq_id} is not paused, {seq.get_status()}"
 
-            if not seq.prompt_stage_processing_finished:
+            if not seq.is_prompt_processing_finished():
                 running_prefills.append(seq)
             else:
                 running_decodes.append(seq)
@@ -98,8 +98,8 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
             ) = self._schedule_decodes(running_decodes, now)
 
         self.running = running
-        self.running = self.policy.sort_by_priority(now, self.running)
-        self.waiting = self.policy.sort_by_priority(now, self.waiting)
+        self.running = sorted(self.running, key=lambda seq: now - seq.arrival_time, reverse=True)
+        self.waiting = sorted(self.waiting, key=lambda seq: now - seq.arrival_time, reverse=True)
 
         # Calculate num waiting just for print
         num_waiting = 0

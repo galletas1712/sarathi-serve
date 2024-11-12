@@ -120,6 +120,10 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
             num_blocks_in_use = (
                 current_total_len + self.block_size - 1
             ) // self.block_size
+
+            # NOTE: We don't assert the block table to be equal to number of blocks in use in prefill
+            # because we allocated the full sequence at the start.
+
             prefill_kv_page_indices.extend(seq_exec_metadata.block_table[:num_blocks_in_use])
             prefill_kv_page_indptr.append(
                 prefill_kv_page_indptr[-1] + num_blocks_in_use
@@ -143,6 +147,16 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
             decode_qo_indptr.append(decode_qo_indptr[-1] + 1)
             # Compute the kv page indices for the prompt tokens.
             num_blocks_in_use = (context_len + self.block_size - 1) // self.block_size
+
+            assert num_blocks_in_use == seq_exec_metadata.seq.get_num_logical_blocks(), (
+                f"Number of blocks in use {num_blocks_in_use} does not match the number of logical blocks "
+                f"{seq_exec_metadata.seq.get_num_logical_blocks()}"
+            )
+            assert num_blocks_in_use == len(seq_exec_metadata.block_table), (
+                f"Number of blocks in use {num_blocks_in_use} does not match the length of the block table "
+                f"{len(seq_exec_metadata.block_table)}"
+            )
+
             decode_kv_page_indices.extend(seq_exec_metadata.block_table[:num_blocks_in_use])
             decode_kv_page_indptr.append(decode_kv_page_indptr[-1] + num_blocks_in_use)
             decode_kv_last_page_len.append(

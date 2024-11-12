@@ -106,7 +106,7 @@ class SarathiScheduler(BaseScheduler):
         # 1. The sequence group has incomplete prefill. The routine
         # remains identical to the one in sarathi scheduler for such sequences.
         # 2. The sequence group has completed prefill. In this case, we need to
-        # check for memory availability for the next chunk of decode tokens, and preempt
+        # check for memory availability for the next chunk of decoe tokens, and preempt
         # some sequence groups if necessary. Note that, the preempted sequence groups
         # might belong to either of the two categories.
         ######################################################################
@@ -115,7 +115,7 @@ class SarathiScheduler(BaseScheduler):
         # to keep all the sequence groups in the RUNNING state.
         # In this case, the policy is responsible for deciding which sequence
         # groups to preempt.
-        self.running = sorted(self.running, key=lambda seq: self.get_priority(now, seq), reverse=True)
+        self.running = sorted(self.running, key=lambda seq: now - seq.arrival_time, reverse=True)
 
         # in first pass process all the requests with prefill completed
         # this allows us to accurately account for the number of decode tokens
