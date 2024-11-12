@@ -365,7 +365,7 @@ class BaseLLMEngine:
 
     def has_unfinished_requests(self) -> bool:
         """Returns True if there are unfinished requests."""
-        return self.scheduler.has_unfinished_seqs()
+        return self.scheduler.get_num_unfinished_seqs() > 0
 
     def step(self) -> List[RequestOutput]:
         """Performs one decoding iteration and returns newly generated results.

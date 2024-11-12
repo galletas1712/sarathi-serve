@@ -56,11 +56,7 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
         print(f"Swapped out: {list(self.swapped_out.keys())}")
         print(f"Running prefills: {[seq.seq_id for seq in running_prefills]}")
         print(f"Running decodes: {[seq.seq_id for seq in running_decodes]}")
-        gpu_metadata, cpu_metadata = self.block_manager.get_block_table_metadata()
-        print(f"Num free GPU blocks: {self.block_manager.allocators[BlockDevice.GPU].get_num_free_blocks()}")
-        print(f"Num free CPU blocks: {self.block_manager.allocators[BlockDevice.CPU].get_num_free_blocks()}")
-        print(f"All GPU block table lens {gpu_metadata}")
-        print(f"All CPU block table lens {cpu_metadata}")
+        print(self.block_manager.get_block_table_metadata_str())
 
         prefill_scheduled_success = False
 

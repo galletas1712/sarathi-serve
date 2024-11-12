@@ -111,20 +111,20 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             total_cpu_blocks_required = 0
             running_decodes_removed = []
             decodes_to_swap_out = []
-            while self.block_manager.num_blocks_remaining_after(num_required_blocks, BlockDevice.GPU) < 0:
+            while num_required_blocks > self.block_manager.get_num_free_blocks(BlockDevice.GPU):
                 if not queue:
                     break
                 decode_seq = queue[-1]
                 num_blocks_allocated = self.block_manager.num_blocks_allocated(decode_seq.seq_id, BlockDevice.GPU)
                 total_cpu_blocks_required += num_blocks_allocated
-                if self.block_manager.num_blocks_remaining_after(total_cpu_blocks_required, BlockDevice.CPU) < 0:
+                if total_cpu_blocks_required > self.block_manager.get_num_free_blocks(BlockDevice.CPU):
                     break
                 num_required_blocks -= num_blocks_allocated
                 decodes_to_swap_out.append(decode_seq)
                 running_decodes_removed.append(decode_seq)
                 queue.pop()
             
-            if self.block_manager.num_blocks_remaining_after(num_required_blocks, BlockDevice.GPU) < 0:
+            if num_required_blocks > self.block_manager.get_num_free_blocks(BlockDevice.GPU):
                 # Restore state
                 queue.extend(reversed(running_decodes_removed))
                 break

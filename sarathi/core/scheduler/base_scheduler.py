@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, List
 
 from sarathi.config import BaseSchedulerConfig, CacheConfig, ModelConfig, ParallelConfig
-from sarathi.core.block_space_manager import BlockSpaceManager
+from sarathi.core.block_space_manager import DryRunBlockSpaceManager
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
 from sarathi.core.datatypes.sequence import Sequence
 from sarathi.logger import init_logger
@@ -28,7 +28,7 @@ class BaseScheduler(ABC):
         self._iteration_id = -1
 
         # Create the block space manager.
-        self.block_manager = BlockSpaceManager(
+        self.block_manager = DryRunBlockSpaceManager(
             cache_config.block_size,
             cache_config.num_gpu_blocks,
             cache_config.num_cpu_blocks,

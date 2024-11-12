@@ -232,8 +232,11 @@ class Sequence(SequenceBase):
     def get_status(self) -> SequenceStatus:
         return deepcopy(self.__status)
     
-    def set_status(self, new_status: SequenceStatus) -> None:
+    def check_transition(self, new_status: SequenceStatus) -> None:
         SequenceStatus.check_transition(self.get_status(), new_status)
+
+    def set_status(self, new_status: SequenceStatus) -> None:
+        self.check_transition(new_status)
         self.__status = new_status
 
     def is_finished(self) -> bool:
@@ -294,6 +297,7 @@ class Sequence(SequenceBase):
 
 
 class DecodeableSequence(Sequence):
+    """The engine's view of a sequence, since the engine does all of the decoding."""
 
     def __init__(
         self,
