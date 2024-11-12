@@ -3,7 +3,7 @@
 import os
 import time
 from threading import Event, Thread
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple
 from pathlib import Path
 
 import torch
@@ -11,7 +11,6 @@ import torch.distributed
 import zmq
 
 from sarathi.config import CacheConfig, ParallelConfig, SystemConfig
-from sarathi.core.block_space_manager.base_block_space_manager import BlockDevice
 from sarathi.core.datatypes.comm_info import CommInfo
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
 from sarathi.core.datatypes.sequence import SamplerOutputs
@@ -182,6 +181,7 @@ class BaseWorker:
 
         # on_schedule will set up block tables, but not extract them
         self.seq_manager.on_schedule(scheduler_outputs)
+
         # This will actually extract the block tables
         seq_exec_metadata_list = self.seq_manager.get_seq_exec_metadata_list(scheduler_outputs)
         

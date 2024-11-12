@@ -178,6 +178,7 @@ class ParallelConfig:
 
     def __post_init__(self):
         self.world_size = self.pipeline_parallel_size * self.tensor_parallel_size
+        assert self.world_size == 1
 
 
 @dataclass
@@ -193,60 +194,6 @@ class BaseSchedulerConfig(BasePolyConfig):
     @abstractmethod
     def get_max_num_batched_tokens(self, max_model_len: int):
         pass
-
-
-@dataclass
-class VllmSchedulerConfig(BaseSchedulerConfig):
-    max_batched_tokens: Optional[int] = field(
-        default=None, metadata={"help": "Maximum number of batched tokens."}
-    )
-
-    def get_max_num_batched_tokens(self, max_model_len: int):
-        if self.max_batched_tokens:
-            return min(self.max_batched_tokens, max_model_len)
-        return max_model_len
-
-    @staticmethod
-    def get_type():
-        return SchedulerType.VLLM
-
-
-@dataclass
-class SimpleChunkingSchedulerConfig(BaseSchedulerConfig):
-    chunk_size: int = field(
-        default=512,
-        metadata={"help": "Size of each chunk for simple chunking scheduler."},
-    )
-    uses_chunked_prefill: bool = field(default=True)
-
-    def get_max_num_batched_tokens(self, max_model_len: int):
-        return self.chunk_size
-
-    @staticmethod
-    def get_type():
-        return SchedulerType.SIMPLE_CHUNKING
-
-
-@dataclass
-class OrcaSchedulerConfig(BaseSchedulerConfig):
-
-    def get_max_num_batched_tokens(self, max_model_len: int):
-        return self.max_num_seqs * max_model_len
-
-    @staticmethod
-    def get_type():
-        return SchedulerType.ORCA
-
-
-@dataclass
-class FasterTransformerSchedulerConfig(BaseSchedulerConfig):
-
-    def get_max_num_batched_tokens(self, max_model_len: int):
-        return self.max_num_seqs * max_model_len
-
-    @staticmethod
-    def get_type():
-        return SchedulerType.FASTER_TRANSFORMER
 
 
 @dataclass
@@ -319,43 +266,6 @@ class MLFQDisaggEmulationSchedulerConfig(DisaggEmulationSchedulerConfig):
     @staticmethod
     def get_type():
         return SchedulerType.MLFQ_DISAGG_EMULATION
-
-
-@dataclass
-class RollingPreemptionProfilingSchedulerConfig(BaseSchedulerConfig):
-    max_num_seqs: int = 8
-    chunk_size: int = 512
-
-    max_num_batched_tokens: Optional[int] = None
-    uses_chunked_prefill: bool = field(default=True)
-
-    def get_max_num_batched_tokens(self, max_model_len: int):
-        if self.max_num_batched_tokens is not None:
-            return self.max_num_batched_tokens
-
-    @staticmethod
-    def get_type():
-        return SchedulerType.ROLLING_PREEMPTION_PROFILING
-
-
-@dataclass
-class OccasionalSwappingSchedulerConfig(BaseSchedulerConfig):
-    max_num_seqs: int = 8
-    chunk_size: int = field(
-        default=512,
-        metadata={"help": "Size of each chunk for simple chunking scheduler."},
-    )
-    uses_chunked_prefill: bool = field(default=True)
-
-    max_num_batched_tokens: Optional[int] = None
-
-    def get_max_num_batched_tokens(self, max_model_len: int):
-        if self.max_num_batched_tokens is not None:
-            return self.max_num_batched_tokens
-
-    @staticmethod
-    def get_type():
-        return SchedulerType.OCCASIONAL_SWAPPING
 
 
 @dataclass

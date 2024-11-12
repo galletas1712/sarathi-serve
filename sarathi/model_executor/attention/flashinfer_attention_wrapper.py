@@ -110,7 +110,7 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
 
             prompt_chunk_len = seq_exec_metadata.prompt_chunk_len
             processed_prompt_len = (
-                seq_exec_metadata.seq.get_num_prompt_tokens_stage_processed()
+                seq_exec_metadata.seq.get_num_prompt_tokens_processed()
             )
             current_total_len = processed_prompt_len + prompt_chunk_len
 
@@ -138,7 +138,7 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
 
             self.contains_decode = True
 
-            context_len = seq_exec_metadata.seq.get_len()
+            context_len = seq_exec_metadata.seq.get_total_len()
             # indptr for the prompt tokens in q/o tensor
             decode_qo_indptr.append(decode_qo_indptr[-1] + 1)
             # Compute the kv page indices for the prompt tokens.

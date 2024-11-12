@@ -7,12 +7,9 @@ from sarathi.config import (
     ParallelConfig,
     SarathiSchedulerConfig,
 )
-from sarathi.core.block_space_manager.base_block_space_manager import BlockDevice
-from sarathi.core.block_space_manager.sarathi_block_space_manager import (
-    SarathiBlockSpaceManager,
-)
+from sarathi.core.block_space_manager import BlockDevice
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
-from sarathi.core.datatypes.sequence import Sequence, SequenceScheduleMetadata
+from sarathi.core.datatypes.sequence import Sequence
 from sarathi.core.scheduler.base_scheduler import BaseScheduler
 from sarathi.logger import init_logger
 
@@ -30,9 +27,6 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
     ) -> None:
         super().__init__(model_config, scheduler_config, cache_config, parallel_config)
 
-    def get_block_space_manager_class(self):
-        return SarathiBlockSpaceManager
-
     def _schedule(self) -> SchedulerOutputs:
         # Fix the current time.
         now = time.monotonic()
@@ -44,8 +38,8 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
             logger.debug(f"(Iteration: {self._iteration_id}) Moving swapped in request {seq.seq_id} into running list")
         
         # Sort both waiting and running queues
-        self.running = self.policy.sort_by_priority(now, self.running)
-        self.waiting = self.policy.sort_by_priority(now, self.waiting)
+        self.running = sorted(self.running, key=lambda seq: self.get_priority(now, seq), reverse=True)
+        self.waiting = sorted(self.waiting, key=lambda seq: self.get_priority(now, seq), reverse=True)
 
         # Get running prefills and running decodes
         running_prefills: List[Sequence] = []

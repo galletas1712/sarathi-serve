@@ -244,7 +244,7 @@ class WorkerMetricsStore:
                 prefill_kv_cache_tokens += seq_exec_metadata.seq.get_prompt_len()  # We already allocated the full sequence in KV cache
                 prefill_batched_tokens += seq_exec_metadata.num_prompt_tokens
             else:
-                decode_kv_cache_tokens += len(seq_exec_metadata.seq.get_token_ids())
+                decode_kv_cache_tokens += len(seq_exec_metadata.seq.get_all_token_ids())
                 decode_batched_tokens += seq_exec_metadata.num_output_tokens
         
         scheduled_timestamp = time.perf_counter()

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import List, Optional
 
-from sarathi.core.datatypes.sequence import Sequence
+from sarathi.core.datatypes.sequence import DecodeableSequence
 from sarathi.core.datatypes.sequence_status import SequenceStatus
 
 
@@ -26,7 +26,7 @@ class RequestOutput:
     finish_reason: Optional[str] = None
 
     @classmethod
-    def from_seq(cls, seq: Sequence) -> "RequestOutput":
+    def from_seq(cls, seq: DecodeableSequence) -> "RequestOutput":
         return cls(
             seq.seq_id,
             seq.prompt,

@@ -1,6 +1,9 @@
 """Sequence and its related classes."""
 
+from dataclasses import dataclass
 from typing import List, Optional
+
+from numpy import copy
 
 from sarathi.core.datatypes.block import LogicalTokenBlock
 from sarathi.core.datatypes.sampling_params import SamplingParams
@@ -8,7 +11,81 @@ from sarathi.core.datatypes.sequence_state import SequenceState
 from sarathi.core.datatypes.sequence_status import SequenceStatus
 
 
-class Sequence:
+@dataclass(frozen=True)
+class SequenceInitParams:
+    seq_id: str
+    prompt: str
+    prompt_token_ids: List[int]
+    block_size: int
+    eos_token_id: int
+    arrival_time: float
+    sampling_params: SamplingParams
+
+
+class SequenceBase:
+    """Contains the init (frozen) parameters of the sequence."""
+
+    def __init__(
+        self,
+        seq_id: str,
+        prompt: str,
+        prompt_token_ids: List[int],
+        block_size: int,
+        eos_token_id: int,
+        arrival_time: float,
+        sampling_params: SamplingParams,
+    ):
+        self._init_params = SequenceInitParams(
+            seq_id=seq_id,
+            prompt=prompt,
+            prompt_token_ids=prompt_token_ids,
+            block_size=block_size,
+            eos_token_id=eos_token_id,
+            arrival_time=arrival_time,
+            sampling_params=sampling_params,
+        )
+    
+    @property
+    def seq_id(self) -> str:
+        return self._init_params.seq_id
+    
+    @property
+    def prompt(self) -> str:
+        return self._init_params.prompt
+    
+    @property
+    def prompt_token_ids(self) -> List[int]:
+        return self._init_params.prompt_token_ids
+    
+    @property
+    def block_size(self) -> int:
+        return self._init_params.block_size
+    
+    @property
+    def eos_token_id(self) -> int:
+        return self._init_params.eos_token_id
+    
+    @property
+    def arrival_time(self) -> float:
+        return self._init_params.arrival_time
+    
+    @property
+    def sampling_params(self) -> SamplingParams:
+        return self._init_params.sampling_params
+    
+    def _coalesce_prompt_and_output_tokens_for_recompute(self, output_token_ids: List[int]):
+        self._init_params = SequenceInitParams(
+            seq_id=self.seq_id,
+            prompt=self.prompt,
+            prompt_token_ids=self.prompt_token_ids + output_token_ids,
+            block_size=self.block_size,
+            eos_token_id=self.eos_token_id,
+            arrival_time=self.arrival_time,
+            sampling_params=self.sampling_params,
+        )
+
+
+class Sequence(SequenceBase):
     """Stores the data, status, and block information of a sequence.
 
     Args:
@@ -29,120 +106,52 @@ class Sequence:
         arrival_time: float,
         sampling_params: SamplingParams,
     ) -> None:
-        self.seq_id = seq_id
-        self.prompt = prompt
-        self.block_size = block_size
-        self.eos_token_id = eos_token_id
-        self.arrival_time = arrival_time
-        self.sampling_params = sampling_params
-        self.prompt_token_ids = prompt_token_ids
-
-        self.output_token_ids: List[int] = []
-        self.prompt_tokens_processed = 0
-        self.prompt_tokens_stage_processed = 0
-        self.prompt_processing_finished = False
-        self.prompt_stage_processing_finished = False
-
-        self.output_text = ""
-
-        self.logical_token_blocks: List[LogicalTokenBlock] = []
-        # Initialize the logical token blocks with the prompt token ids.
-        self._append_tokens_to_blocks(prompt_token_ids)
-
-        # Used for incremental detokenization
-        self.prefix_offset = 0
-        self.read_offset = 0
-        # Input + output tokens
-        self.tokens: Optional[List[str]] = None
-
-        self.state = SequenceState(seq_id, arrival_time, len(prompt_token_ids))
-
-    def get_status(self) -> SequenceStatus:
-        return self.state._status
-
-    def set_status(self, status: SequenceStatus) -> None:
-        self.state.set_status(status)
-
-    def _append_logical_block(self) -> None:
-        block = LogicalTokenBlock(
-            block_number=len(self.logical_token_blocks),
-            block_size=self.block_size,
+        super().__init__(
+            seq_id=seq_id,
+            prompt=prompt,
+            prompt_token_ids=prompt_token_ids,
+            block_size=block_size,
+            eos_token_id=eos_token_id,
+            arrival_time=arrival_time,
+            sampling_params=sampling_params,
         )
-        self.logical_token_blocks.append(block)
 
-    def _append_tokens_to_blocks(self, token_ids: List[int]) -> None:
-        cursor = 0
-        while cursor < len(token_ids):
-            if not self.logical_token_blocks:
-                self._append_logical_block()
+        self.__output_token_ids: List[int] = []
+        self.__num_prompt_tokens_processed = 0
 
-            last_block = self.logical_token_blocks[-1]
-            if last_block.is_full():
-                self._append_logical_block()
-                last_block = self.logical_token_blocks[-1]
+        # Initialize the logical token blocks with the prompt token ids.
+        self.__num_logical_blocks = 0
+        self.__num_free_slots_last_block = 0
 
-            num_empty_slots = last_block.get_num_empty_slots()
-            last_block.append_tokens(token_ids[cursor : cursor + num_empty_slots])
-            cursor += num_empty_slots
+        self.__state = SequenceState(seq_id, arrival_time, len(prompt_token_ids))
+    
+    # Create logical token for prefill right after init
+    def __post_init__(self):
+        self.__create_logical_blocks_for_tokens(self.get_prompt_len())
 
-    def update_prompt_tokens_processed(self, num_tokens: int) -> None:
-        assert not self.prompt_processing_finished
-        assert num_tokens > 0
+    #################### Derived properties. Everything returned is a copy/cannot be used to alter the state of the sequence. ####################
 
-        self.prompt_tokens_processed += num_tokens
-        assert self.prompt_tokens_processed <= len(self.prompt_token_ids)
-
-        if self.prompt_tokens_processed == len(self.prompt_token_ids):
-            self.prompt_processing_finished = True
-
-    def update_prompt_tokens_stage_processed(self, num_tokens: int) -> None:
-        assert not self.prompt_processing_finished
-        assert not self.prompt_stage_processing_finished
-        assert num_tokens > 0
-        self.prompt_tokens_stage_processed += num_tokens
-        assert self.prompt_tokens_stage_processed <= len(self.prompt_token_ids)
-        if self.prompt_tokens_stage_processed == len(self.prompt_token_ids):
-            self.prompt_stage_processing_finished = True
-
-    def append_token_id(
-        self,
-        token_id: int,
-    ) -> None:
-        # the token need not be appended to the sequence
-        # when processing partial prefill chunks
-        assert self.prompt_processing_finished
-
-        self.output_token_ids.append(token_id)
-        self._append_tokens_to_blocks([token_id])
-
-    def get_len(self) -> int:
-        return len(self.output_token_ids) + len(self.prompt_token_ids)
+    # Lengths
 
     def get_prompt_len(self) -> int:
         return len(self.prompt_token_ids)
 
     def get_output_len(self) -> int:
-        return len(self.output_token_ids)
-
-    def get_token_ids(self) -> List[int]:
-        return self.prompt_token_ids + self.output_token_ids
+        return len(self.__output_token_ids)
+    
+    def get_total_len(self) -> int:
+        return self.get_prompt_len() + self.get_output_len()
+    
+    # Prefill
 
     def get_num_prompt_tokens_processed(self) -> int:
-        return self.prompt_tokens_processed
-
-    def get_num_prompt_tokens_stage_processed(self) -> int:
-        return self.prompt_tokens_stage_processed
-
-    def get_last_token_id(self) -> int:
-        if not self.output_token_ids:
-            return self.prompt_token_ids[-1]
-        return self.output_token_ids[-1]
-
-    def get_output_token_ids(self) -> List[int]:
-        return self.output_token_ids
+        return self.__num_prompt_tokens_processed
+    
+    def is_prompt_processing_finished(self) -> bool:
+        return self.__num_prompt_tokens_processed == len(self.prompt_token_ids)
 
     def get_next_prompt_chunk_token_ids(self, chunk_size: int) -> List[int]:
-        start = self.prompt_tokens_stage_processed
+        start = self.get_num_prompt_tokens_processed()
         end = start + chunk_size
         assert end <= len(self.prompt_token_ids), (
             f"End index {end} is greater than the prompt length "
@@ -152,8 +161,79 @@ class Sequence:
 
     def get_next_prompt_chunk_len(self, chunk_size: int) -> int:
         return min(
-            chunk_size, len(self.prompt_token_ids) - self.prompt_tokens_stage_processed
+            chunk_size, len(self.prompt_token_ids) - self.get_num_prompt_tokens_processed()
         )
+
+    # Logical blocks
+
+    def get_num_logical_blocks(self) -> int:
+        return self.__num_logical_blocks
+    
+    # Token IDs
+
+    def get_output_token_ids(self) -> List[int]:
+        return copy.deepcopy(self.__output_token_ids)
+    
+    def get_all_token_ids(self) -> List[int]:
+        return self.prompt_token_ids + self.__output_token_ids
+
+    def get_last_token_id(self) -> int:
+        if not self.output_token_ids:
+            return self.prompt_token_ids[-1]
+        return self.output_token_ids[-1]
+    
+    #################### Update operations ####################
+
+    # Private
+
+    def __create_logical_blocks_for_tokens(self, num_tokens_to_add: int) -> None:
+        # Fill up the last block first
+        if self.__num_free_slots_last_block > 0:
+            slots_to_occupy = min(self.__num_free_slots_last_block, num_tokens_to_add)
+            self.__num_free_slots_last_block -= slots_to_occupy
+            num_tokens_to_add -= slots_to_occupy
+        
+        assert num_tokens_to_add >= 0
+        if num_tokens_to_add == 0:
+            return
+        
+        # Now, create as many blocks as necessary
+        num_blocks_to_add = (num_tokens_to_add + self.block_size - 1) // self.block_size
+        self.__num_logical_blocks += num_blocks_to_add
+        self.__num_free_slots_last_block = self.block_size - (num_tokens_to_add % self.block_size)
+
+    # Public
+     
+    def update_prompt_tokens_processed(self, num_tokens: int) -> None:
+        assert not self.prompt_processing_finished
+        assert num_tokens > 0
+
+        self.__num_prompt_tokens_processed += num_tokens
+        assert self.num_prompt_tokens_processed <= len(self.prompt_token_ids)
+
+    def append_token_id(
+        self,
+        token_id: int,
+    ) -> None:
+        assert self.prompt_processing_finished
+        self.__output_token_ids.append(token_id)
+        self.__create_logical_blocks_for_tokens(1)
+    
+    def reset_for_recompute(self):
+        self.set_status(SequenceStatus.WAITING)
+        self.__num_prompt_tokens_processed = 0
+        self._coalesce_prompt_and_output_tokens_for_recompute(self.__output_token_ids)
+        self.__output_token_ids = []
+        # No need to reset logical blocks here
+    
+        
+    #################### State ####################
+
+    def get_status(self) -> SequenceStatus:
+        return self.__state._status
+    
+    def set_status(self, status: SequenceStatus) -> None:
+        self.__state.set_status(status)
 
     def is_finished(self) -> bool:
         return SequenceStatus.is_finished(self.get_status())
@@ -176,24 +256,16 @@ class Sequence:
     def is_swapped_out(self) -> bool:
         return SequenceStatus.is_swapped_out(self.get_status())
 
-    def reset_for_recompute(self):
-        self.set_status(SequenceStatus.WAITING)
-        self.prompt_tokens_processed = 0
-        self.prompt_tokens_stage_processed = 0
-        self.prompt_processing_finished = False
-        self.prompt_stage_processing_finished = False
-        self.prompt_token_ids = self.prompt_token_ids + self.output_token_ids
-        self.output_token_ids = []
-
     def check_stop(self) -> None:
         """Stop the finished sequences."""
-        for stop_str in self.sampling_params.stop:
-            if self.output_text.endswith(stop_str):
-                # Truncate the output text so that the stop string is
-                # not included in the output.
-                self.output_text = self.output_text[: -len(stop_str)]
-                self.set_status(SequenceStatus.FINISHED_STOPPED)
-                return
+        # NOTE: This was a bug since a long time ago - __output_text doesn't get updated in worker
+        # for stop_str in self.sampling_params.stop:
+        #     if self.__output_text.endswith(stop_str):
+        #         # Truncate the output text so that the stop string is
+        #         # not included in the output.
+        #         self.__output_text = self.__output_text[: -len(stop_str)]
+        #         self.set_status(SequenceStatus.FINISHED_STOPPED)
+        #         return
 
         # Check if the sequence has reached max_tokens.
         if self.get_output_len() == self.sampling_params.max_tokens:
@@ -209,18 +281,75 @@ class Sequence:
 
     def __repr__(self) -> str:
         return (
-            f"Sequence(seq_id={self.seq_id}, "
+            f"{__class__}(seq_id={self.seq_id}, "
             f"status={self.get_status().name}, "
-            f"num_blocks={len(self.logical_token_blocks)}, "
-            f"num_prompt_tokens={len(self.prompt_token_ids)}, "
-            f"num_output_tokens={len(self.output_token_ids)}, "
-            f"prompt_processing_finished={self.prompt_processing_finished}, "
-            f"num_prompt_tokens_processed={self.prompt_tokens_processed}, "
-            f"num_prompt_tokens_stage_processed={self.prompt_tokens_stage_processed}, "
-            f"prompt_stage_processing_finished={self.prompt_stage_processing_finished})"
+            f"prompt_len={self.get_prompt_len()}, "
+            f"output_len={self.get_output_len()}, "
+            f"num_logical_blocks={self.get_num_logical_blocks()}, "
+            f"num_free_slots_last_block={self.__num_free_slots_last_block}, "
+            f"is_prompt_processing_finished={self.is_prompt_processing_finished()}, "
+            f"num_prompt_tokens_processed={self.get_num_prompt_tokens_processed()}, "
         )
 
 
+class DecodeableSequence(Sequence):
+
+    def __init__(
+        self,
+        seq_id: str,
+        prompt: str,
+        prompt_token_ids: List[int],
+        block_size: int,
+        eos_token_id: int,
+        arrival_time: float,
+        sampling_params: SamplingParams,
+    ) -> None:
+        super().__init__(
+            seq_id=seq_id,
+            prompt=prompt,
+            prompt_token_ids=prompt_token_ids,
+            block_size=block_size,
+            eos_token_id=eos_token_id,
+            arrival_time=arrival_time,
+            sampling_params=sampling_params,
+        )
+
+        # Properties for decoding in engine_sequence_manager
+        ## Used for incremental detokenization
+        self.__prefix_offset = 0
+        self.__read_offset = 0
+        ## Input + output tokens
+        self.__tokens_decoded_so_far: Optional[List[str]] = None
+        self.__output_text = ""
+
+    @property
+    def prefix_offset(self) -> int:
+        return self.__prefix_offset
+    
+    @property
+    def read_offset(self) -> int:
+        return self.__read_offset
+    
+    @property
+    def tokens_decoded_so_far(self) -> Optional[List[int]]:
+        return self.__tokens_decoded_so_far
+    
+    @property
+    def output_text(self) -> str:
+        return self.__output_text
+    
+    def update_decode_state(self, new_tokens: List[int], prefix_offset: int, read_offset: int, new_output_text: str) -> None:
+        if self.__tokens_decoded_so_far is None:
+            self.__tokens_decoded_so_far = new_tokens
+        else:
+            self.__tokens_decoded_so_far.extend(new_tokens)
+        
+        self.__prefix_offset = prefix_offset
+        self.__read_offset = read_offset
+        self.__output_text += new_output_text
+    
+
+@dataclass(frozen=True)
 class SequenceScheduleMetadata:
     """Metadata generated by the scheduler for sequence that has been scheduled.
     This is passed to the worker, and the sequence manger is responsible for
@@ -231,13 +360,8 @@ class SequenceScheduleMetadata:
         prompt_chunk_len: The size of the prompt chunk.
     """
 
-    def __init__(
-        self,
-        seq_id: str,
-        prompt_chunk_len: int,
-    ) -> None:
-        self.seq_id = seq_id
-        self.prompt_chunk_len = prompt_chunk_len
+    seq_id: str
+    prompt_chunk_len: int
 
     @property
     def num_prompt_tokens(self) -> int:
@@ -263,8 +387,10 @@ class SequenceScheduleMetadata:
         seq: Sequence,
         prompt_chunk_len: Optional[int] = None,
     ) -> "SequenceScheduleMetadata":
+        """NOTE: prompt_chunk_len = None corresponds to the case of no chunked prefill."""
+
         if prompt_chunk_len is None:
-            if seq.prompt_stage_processing_finished:
+            if seq.is_prompt_processing_finished():
                 prompt_chunk_len = 0
             else:
                 prompt_chunk_len = seq.get_prompt_len()
@@ -281,6 +407,7 @@ class SequenceScheduleMetadata:
         return self.__str__()
 
 
+@dataclass(frozen=True)
 class SequenceExecutionMetadata:
     """Metadata for a sequence. Used to create `SamplerMetadata`.
 
@@ -290,15 +417,9 @@ class SequenceExecutionMetadata:
         prompt_chunk_len: The size of the prompt chunk.
     """
 
-    def __init__(
-        self,
-        seq: Sequence,
-        block_table: List[int],
-        prompt_chunk_len: int,
-    ) -> None:
-        self.seq = seq
-        self.block_table = block_table
-        self.prompt_chunk_len = prompt_chunk_len
+    seq: Sequence
+    block_table: List[int]
+    prompt_chunk_len: int
 
     @property
     def num_prompt_tokens(self) -> int:
@@ -328,32 +449,10 @@ class SequenceExecutionMetadata:
         return self.__str__()
 
 
+@dataclass(frozen=True)
 class SamplerOutput:
-    """The model output associated with a sequence.
-
-    Args:
-        seq_id: The ID of sequence.
-        output_token: The output token ID.
-    """
-
-    def __init__(
-        self,
-        seq_id: str,
-        output_token: int,
-    ) -> None:
-        self.seq_id = seq_id
-        self.output_token = output_token
-
-    def __repr__(self) -> str:
-        return (
-            f"SamplerOutput(seq_id={self.seq_id}, "
-            f"output_token={self.output_token}))"
-        )
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, SamplerOutput):
-            raise NotImplementedError()
-        return self.seq_id == other.seq_id and self.output_token == other.output_token
+    seq_id: str
+    output_token: int
 
 
 SamplerOutputs = List[SamplerOutput]

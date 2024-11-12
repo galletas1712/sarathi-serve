@@ -1,10 +1,7 @@
 from typing import Dict, List, Tuple
 
 from sarathi.config import SystemConfig
-from sarathi.core.block_space_manager.base_block_space_manager import BlockDevice
-from sarathi.core.block_space_manager.block_space_manager_registry import (
-    BlockSpaceManagerRegistry,
-)
+from sarathi.core.block_space_manager import BlockDevice, BlockSpaceManager
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
 from sarathi.core.datatypes.sequence import Sequence, SequenceExecutionMetadata, SequenceScheduleMetadata
 from sarathi.core.sequence_manager.base_sequence_manager import BaseSequenceManager
@@ -20,8 +17,7 @@ class WorkerSequenceManager(BaseSequenceManager):
         # we will have a clone of block manager here, it is supposed
         # to work in sync block manager in scheduler the idea is to avoid
         # sending block table every time to the worker
-        self.block_manager = BlockSpaceManagerRegistry.get(
-            config.scheduler_config.get_type(),
+        self.block_manager = BlockSpaceManager(
             config.cache_config.block_size,
             config.cache_config.num_gpu_blocks,
             config.cache_config.num_cpu_blocks,
@@ -56,8 +52,7 @@ class WorkerSequenceManager(BaseSequenceManager):
         seq = self.seq_map[seq_id_metadata.seq_id]
 
         if seq.is_waiting():
-            assert len(seq.prompt_token_ids) > 0 and len(seq.output_token_ids) == 0
-            # print(f"Trying to schedule {seq.seq_id}, free blocks: {self.block_manager.allocators[BlockDevice.GPU].get_num_free_blocks()}, required blocks: {len(seq.logical_token_blocks)}")
+            assert seq.get_prompt_len() > 0 and seq.get_output_len() == 0
             assert self.block_manager.can_allocate(seq, BlockDevice.GPU)
             self.block_manager.allocate(seq, BlockDevice.GPU)
         elif not seq_id_metadata.is_prompt:

@@ -2,12 +2,9 @@ from abc import ABC, abstractmethod
 from typing import Dict, List
 
 from sarathi.config import BaseSchedulerConfig, CacheConfig, ModelConfig, ParallelConfig
-from sarathi.core.block_space_manager.block_space_manager_registry import (
-    BlockSpaceManagerRegistry,
-)
+from sarathi.core.block_space_manager import BlockSpaceManager
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
-from sarathi.core.datatypes.sequence import Sequence, SequenceStatus
-from sarathi.core.policy import PolicyFactory
+from sarathi.core.datatypes.sequence import Sequence
 from sarathi.logger import init_logger
 
 logger = init_logger(__name__)
@@ -30,12 +27,8 @@ class BaseScheduler(ABC):
         # we maintain this just for logging purposes
         self._iteration_id = -1
 
-        # Instantiate the scheduling policy.
-        self.policy = PolicyFactory.get_policy("fcfs")  # TODO: change
-
         # Create the block space manager.
-        self.block_manager = BlockSpaceManagerRegistry.get(
-            scheduler_config.get_type(),
+        self.block_manager = BlockSpaceManager(
             cache_config.block_size,
             cache_config.num_gpu_blocks,
             cache_config.num_cpu_blocks,
@@ -157,9 +150,9 @@ class BaseScheduler(ABC):
         self.swapped_out[seq.seq_id] = seq
     
     def _check_request_prompt_length(self, seq: Sequence) -> bool:
-        if seq.get_len() > self.prompt_limit:
+        if seq.get_prompt_len() > self.prompt_limit:
             logger.warning(
-                f"Input prompt ({seq.get_len()} tokens) is too long"
+                f"Input prompt ({seq.get_prompt_len()} tokens) is too long"
                 f" and exceeds limit of {self.prompt_limit}"
             )
             self.waiting.pop(0)

@@ -1,21 +1,12 @@
-import enum
-import time
 from typing import List
 
 from sarathi.config import (
     CacheConfig,
     ModelConfig,
     ParallelConfig,
-    SarathiSchedulerConfig,
 )
 from sarathi.config.config import FCFSDisaggEmulationSchedulerConfig
-from sarathi.core.block_space_manager.base_block_space_manager import BlockDevice
-from sarathi.core.block_space_manager.sarathi_block_space_manager import (
-    SarathiBlockSpaceManager,
-)
-from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
 from sarathi.core.datatypes.sequence import Sequence, SequenceScheduleMetadata
-from sarathi.core.policy import PolicyFactory
 from sarathi.core.scheduler.disagg_emulation_base_scheduler import DisaggEmulationBaseScheduler
 from sarathi.logger import init_logger
 
@@ -32,14 +23,13 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         parallel_config: ParallelConfig,
     ) -> None:
         super().__init__(model_config, scheduler_config, cache_config, parallel_config)
-        self.policy = PolicyFactory.get_policy("fcfs")
 
     def _get_seq_next_num_prefill_tokens(
         self, seq: Sequence, num_batched_tokens: int
     ) -> int:
         assert not seq.is_finished()
         next_num_tokens = min(
-            seq.get_prompt_len() - seq.get_num_prompt_tokens_stage_processed(),
+            seq.get_prompt_len() - seq.get_num_prompt_tokens_processed(),
             self.scheduler_config.chunk_size - num_batched_tokens,
         )
 
@@ -65,7 +55,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
 
         # Schedule currently running request
         for seq in running_prefills:
-            assert not seq.prompt_stage_processing_finished
+            assert not seq.is_prompt_processing_finished()
 
             next_num_prefill_tokens = self._get_seq_next_num_prefill_tokens(
                 seq, num_batched_tokens
@@ -149,7 +139,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         num_batched_tokens = 0
 
         # True FCFS order
-        queue = self.policy.sort_by_priority(now, [*running_decodes, *self.swapped_out.values()])
+        queue = sorted([*running_decodes, *self.swapped_out.values()], key=lambda seq: now - seq.arrival_time, reverse=True)
 
         while queue:
             seq = queue.pop(0)
@@ -160,7 +150,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 return self.block_manager.can_append_slot(seq)
             
             def can_swap_in_and_append_slot():
-                return self.block_manager.can_swap_in_and_append_slot(seq.seq_id, len(seq.logical_token_blocks))
+                return self.block_manager.can_swap_in_and_append_slot(seq.seq_id, seq.get_num_logical_blocks())
             
             can_schedule = can_append_slot if seq.is_paused() else can_swap_in_and_append_slot
 

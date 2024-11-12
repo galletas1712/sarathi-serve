@@ -107,7 +107,7 @@ class BaseSequenceManager(ABC):
         # at this point, the seq should be in paused state
         assert not seq.is_finished()
 
-        if not seq.prompt_processing_finished:
+        if not seq.is_prompt_processing_finished():
             return
 
         if not isinstance(self.config.scheduler_config, RollingPreemptionProfilingSchedulerConfig):
@@ -144,10 +144,7 @@ class BaseSequenceManager(ABC):
                 # triggers the preemption
                 continue
 
-            if not seq.prompt_processing_finished:
-                seq.update_prompt_tokens_stage_processed(
-                    seq_id_metadata.prompt_chunk_len
-                )
+            if not seq.is_prompt_processing_finished():
                 seq.update_prompt_tokens_processed(
                     seq_id_metadata.prompt_chunk_len
                 )

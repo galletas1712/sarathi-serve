@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import List
 
 from sarathi.config import (
     CacheConfig,
@@ -6,7 +6,7 @@ from sarathi.config import (
     ParallelConfig,
     MLFQDisaggEmulationSchedulerConfig
 )
-from sarathi.core.block_space_manager.base_block_space_manager import BlockDevice
+from sarathi.core.block_space_manager import BlockDevice
 from sarathi.core.datatypes.sequence import Sequence, SequenceScheduleMetadata
 from sarathi.core.scheduler.disagg_emulation_base_scheduler import DisaggEmulationBaseScheduler
 from sarathi.logger import init_logger
@@ -36,7 +36,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
     ) -> int:
         assert not seq.is_finished()
         next_num_tokens = min(
-            seq.get_prompt_len() - seq.get_num_prompt_tokens_stage_processed(),
+            seq.get_prompt_len() - seq.get_num_prompt_tokens_processed(),
             self.scheduler_config.chunk_size - num_batched_tokens,
         )
 
@@ -53,7 +53,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
 
         # Schedule currently running request
         for seq in running_prefills:
-            assert not seq.prompt_stage_processing_finished
+            assert not seq.is_prompt_processing_finished()
 
             next_num_prefill_tokens = self._get_seq_next_num_prefill_tokens(
                 seq, num_batched_tokens
@@ -107,7 +107,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 break
 
             # Swap lowest priority requests in running list
-            num_required_blocks = len(seq.logical_token_blocks)
+            num_required_blocks = seq.get_num_logical_blocks()
             total_cpu_blocks_required = 0
             running_decodes_removed = []
             decodes_to_swap_out = []
@@ -221,7 +221,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         
         queue = list(filter(lambda seq: not seq.is_swapping_in(), queue))
         for seq in queue:
-            assert seq.prompt_processing_finished and seq.prompt_stage_processing_finished
+            assert seq.is_prompt_processing_finished()
         
         return queue
     

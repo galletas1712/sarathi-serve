@@ -75,7 +75,7 @@ class ModelRunner:
             current_prompt_chunk_len = len(current_prompt_chunk_tokens)
             current_prompt_chunk_lens.append(current_prompt_chunk_len)
             processed_prompt_len = (
-                seq_exec_metadata.seq.get_num_prompt_tokens_stage_processed()
+                seq_exec_metadata.seq.get_num_prompt_tokens_processed()
             )
 
             current_total_len = processed_prompt_len + current_prompt_chunk_len
@@ -90,7 +90,7 @@ class ModelRunner:
             generation_token = seq_exec_metadata.seq.get_last_token_id()
             input_tokens.append(generation_token)
 
-            context_len = seq_exec_metadata.seq.get_len()
+            context_len = seq_exec_metadata.seq.get_total_len()
             position = context_len - 1
             input_positions.append(position)
 

@@ -1,15 +1,20 @@
 """A block manager that manages token blocks."""
 
-from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Tuple
 from enum import Enum
 
-from sarathi.core.datatypes.block import PhysicalTokenBlock
 from sarathi.core.datatypes.sequence import Sequence
+
+
+# Mapping: logical block number -> physical block number.
+BlockNumber = int
+BlockTable = List[BlockNumber]
+
 
 class BlockDevice(Enum):
     GPU = "cuda"
     CPU = "cpu"
+
 
 class BlockAllocator:
     """Manages free physical token blocks for a device.
@@ -21,36 +26,33 @@ class BlockAllocator:
 
     def __init__(
         self,
-        block_size: int,
         num_blocks: int,
     ) -> None:
-        self.block_size = block_size
-        self.num_blocks = num_blocks
+        self.__num_blocks = num_blocks
 
         # Initialize the free blocks.
-        self.free_blocks: List[PhysicalTokenBlock] = []
+        self.__free_blocks: List[BlockNumber] = []
         for i in reversed(range(num_blocks)):
-            block = PhysicalTokenBlock(block_number=i, block_size=block_size)
-            self.free_blocks.append(block)
+            self.free_blocks.append(i)
+    
+    @property
+    def num_total_blocks(self) -> int:
+        return self.__num_blocks
 
-    def allocate(self) -> PhysicalTokenBlock:
-        if not self.free_blocks:
+    def allocate(self) -> BlockNumber:
+        if not self.__free_blocks:
             raise ValueError("Out of memory! No free blocks are available.")
-        block = self.free_blocks.pop()
+        block = self.__free_blocks.pop()
         return block
 
-    def free(self, block: PhysicalTokenBlock) -> None:
-        self.free_blocks.append(block)
+    def free(self, block: BlockNumber) -> None:
+        self.__free_blocks.append(block)
 
     def get_num_free_blocks(self) -> int:
-        return len(self.free_blocks)
+        return len(self.__free_blocks)
 
 
-# Mapping: logical block number -> physical block.
-BlockTable = List[PhysicalTokenBlock]
-
-
-class BaseBlockSpaceManager(ABC):
+class BlockSpaceManager:
     """Manages the mapping between logical and physical token blocks."""
 
     def __init__(
@@ -80,10 +82,8 @@ class BaseBlockSpaceManager(ABC):
         self.swap_in_mapping: Dict[str, List[Tuple[int, int]]] = {}
         self.swap_out_mapping: Dict[str, List[Tuple[int, int]]] = {}
 
-    @abstractmethod
     def get_num_initial_blocks(self, seq: Sequence) -> int:
-        """Returns the number of blocks to allocate for a request initially."""
-        pass
+        return seq.get_num_logical_blocks()
 
     def _ensure_valid(self) -> None:
         for seq_id in self.block_tables.keys():
@@ -136,9 +136,9 @@ class BaseBlockSpaceManager(ABC):
         assert isinstance(seq, Sequence)
         assert device == BlockDevice.GPU
         block_table_len = self.num_blocks_allocated(seq.seq_id, device)
-        assert len(seq.logical_token_blocks) - block_table_len <= 1
+        assert seq.get_num_logical_blocks() - block_table_len <= 1
         return self.num_blocks_remaining_after(
-            num_required_blocks=1 if block_table_len < len(seq.logical_token_blocks) else 0,
+            num_required_blocks=1 if block_table_len < seq.get_num_logical_blocks() else 0,
             device=device
         ) >= 0
     
@@ -148,7 +148,7 @@ class BaseBlockSpaceManager(ABC):
         assert device == BlockDevice.GPU
         block_table = self.block_tables[seq.seq_id][device]
 
-        if len(block_table) < len(seq.logical_token_blocks):
+        if len(block_table) < seq.get_num_logical_blocks():
             # The sequence has a new logical block.
             # Allocate a new physical block.
             assert self.can_append_slot(seq, device)
