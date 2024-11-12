@@ -15,6 +15,37 @@ class SequenceStatus(enum.Enum):
     FINISHED_IGNORED = enum.auto()
 
     @staticmethod
+    def check_transition(start_status: "SequenceStatus", end_status: "SequenceStatus") -> bool:
+        ALLOWED_TRANSITIONS = {
+            SequenceStatus.WAITING: [
+                SequenceStatus.RUNNING,
+                SequenceStatus.FINISHED_IGNORED,
+            ],
+            SequenceStatus.RUNNING: [
+                SequenceStatus.PAUSED,
+                SequenceStatus.WAITING,
+            ],
+            SequenceStatus.PAUSED: [
+                SequenceStatus.FINISHED_STOPPED,
+                SequenceStatus.FINISHED_LENGTH_CAPPED,
+                SequenceStatus.RUNNING,
+                SequenceStatus.WAITING,
+                SequenceStatus.SWAPPED_OUT,
+            ],
+            SequenceStatus.SWAPPED_OUT: [
+                SequenceStatus.SWAPPING_IN,
+            ],
+            SequenceStatus.SWAPPING_IN: [
+                SequenceStatus.PAUSED,
+            ],
+            SequenceStatus.FINISHED_IGNORED: [],
+            SequenceStatus.FINISHED_STOPPED: [],
+            SequenceStatus.FINISHED_LENGTH_CAPPED: []
+        }
+        
+        assert end_status in ALLOWED_TRANSITIONS[start_status], f"Invalid state transition from {start_status} to {end_status}"
+
+    @staticmethod
     def is_finished(status: "SequenceStatus") -> bool:
         return status in [
             SequenceStatus.FINISHED_STOPPED,
@@ -60,3 +91,4 @@ class SequenceStatus(enum.Enum):
         else:
             finish_reason = None
         return finish_reason
+

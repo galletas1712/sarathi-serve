@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from sarathi.core.datatypes.sampling_params import SamplingParams
-from sarathi.core.datatypes.sequence_state import SequenceState
 from sarathi.core.datatypes.sequence_status import SequenceStatus
 
 
@@ -121,7 +120,7 @@ class Sequence(SequenceBase):
         self.__num_logical_blocks = 0
         self.__num_free_slots_last_block = 0
 
-        self.__state = SequenceState(seq_id, arrival_time, len(prompt_token_ids))
+        self.__status = SequenceStatus.WAITING
 
         # We need to create the logical blocks for the prompt tokens right away.
         self.__create_logical_blocks_for_tokens(self.get_prompt_len())
@@ -231,10 +230,11 @@ class Sequence(SequenceBase):
     #################### State ####################
 
     def get_status(self) -> SequenceStatus:
-        return self.__state._status
+        return deepcopy(self.__status)
     
-    def set_status(self, status: SequenceStatus) -> None:
-        self.__state.set_status(status)
+    def set_status(self, new_status: SequenceStatus) -> None:
+        SequenceStatus.check_transition(self.get_status(), new_status)
+        self.__status = new_status
 
     def is_finished(self) -> bool:
         return SequenceStatus.is_finished(self.get_status())
