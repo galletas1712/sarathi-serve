@@ -2,10 +2,15 @@
 
 from abc import ABC, abstractmethod
 from copy import deepcopy
+import enum
 from typing import Dict, List, Optional, Union
 
-from sarathi.core.block_space_manager import BlockDevice
 from sarathi.core.datatypes.sequence import Sequence
+
+
+class BlockDevice(enum.Enum):
+    GPU = "gpu"
+    CPU = "cpu"
 
 
 class BaseBlockAllocator:
@@ -40,10 +45,10 @@ class BaseBlockAllocator:
         self.__num_blocks_allocated += num_blocks
         return num_blocks
 
-    def free(self, num_blocks: int) -> None:
-        if num_blocks > self.__num_blocks_allocated:
+    def free(self, blocks: int) -> None:
+        if blocks > self.__num_blocks_allocated:
             raise ValueError("Invalid number of blocks to free.")
-        self.__num_blocks_allocated -= num_blocks
+        self.__num_blocks_allocated -= blocks
 
 
 class DryRunBlockAllocator(BaseBlockAllocator):
@@ -63,6 +68,7 @@ class BlockAllocator(BaseBlockAllocator):
         return result
     
     def free(self, blocks: List[int]) -> None:
+        super().free(len(blocks))
         self.__free_blocks.extend(blocks)
         self.__ensure_consistent_with_parent()
     
@@ -224,19 +230,19 @@ class BaseBlockSpaceManager(ABC):
     ########## Metadata ##########
 
     def get_block_table_metadata_str(self) -> str:
-        result_gpu = []
-        result_cpu = []
+        gpu_block_table_lens = []
+        cpu_block_table_lens = []
         for seq_id in self._block_tables.keys():
             if BlockDevice.GPU in self._block_tables[seq_id]:
-                result_gpu.append((seq_id, self.get_seq_num_blocks_allocated(seq_id, BlockDevice.GPU)))
+                gpu_block_table_lens.append((seq_id, self.get_seq_num_blocks_allocated(seq_id, BlockDevice.GPU)))
             if BlockDevice.CPU in self._block_tables[seq_id]:
-                result_cpu.append((seq_id, self.get_seq_num_blocks_allocated(seq_id, BlockDevice.CPU)))
+                cpu_block_table_lens.append((seq_id, self.get_seq_num_blocks_allocated(seq_id, BlockDevice.CPU)))
 
         return '\n'.join([
-            f"Num free GPU blocks: {self._allocators[BlockDevice.GPU].get_num_free_blocks()}",
-            f"Num free CPU blocks: {self._allocators[BlockDevice.CPU].get_num_free_blocks()}",
-            f"All GPU block table lens: {result_gpu}",
-            f"All CPU block table lens: {result_cpu}"])
+            f"Num free GPU blocks: {self.get_num_free_blocks(BlockDevice.GPU)}",
+            f"Num free CPU blocks: {self.get_num_free_blocks(BlockDevice.CPU)}",
+            f"All GPU block table lens: {gpu_block_table_lens}",
+            f"All CPU block table lens: {cpu_block_table_lens}"])
         
 
 class DryRunBlockSpaceManager(BaseBlockSpaceManager):

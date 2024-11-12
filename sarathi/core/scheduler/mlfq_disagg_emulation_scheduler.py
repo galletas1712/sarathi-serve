@@ -115,7 +115,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 if not queue:
                     break
                 decode_seq = queue[-1]
-                num_blocks_allocated = self.block_manager.num_blocks_allocated(decode_seq.seq_id, BlockDevice.GPU)
+                num_blocks_allocated = self.block_manager.get_seq_num_blocks_allocated(decode_seq.seq_id, BlockDevice.GPU)
                 total_cpu_blocks_required += num_blocks_allocated
                 if total_cpu_blocks_required > self.block_manager.get_num_free_blocks(BlockDevice.CPU):
                     break

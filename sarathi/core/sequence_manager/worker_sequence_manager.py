@@ -54,9 +54,9 @@ class WorkerSequenceManager(BaseSequenceManager):
         if seq.is_waiting():
             assert seq.get_prompt_len() > 0 and seq.get_output_len() == 0
             assert self.block_manager.can_allocate(seq, BlockDevice.GPU)
-            self.block_manager.allocate(seq, BlockDevice.GPU)
+            self.block_manager.allocate(seq)
         elif not seq_id_metadata.is_prompt:
-            self.block_manager.append_slot(seq, BlockDevice.GPU)
+            self.block_manager.append_slot(seq)
         
         # NOTE: Here, we assume that in chunked prefill mode, the full sequence is allocated,
         # which means in later chunks, we don't need to allocate. But when decoding, we do need to append slots.
