@@ -240,7 +240,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             assert seq.is_paused() or seq.is_swapped_out(), f"Sequence {seq.seq_id} is in an invalid state: {seq.get_status()}"
 
             # Swap lowest priority requests in running list
-            num_required_blocks = seq.get_num_logical_blocks()
+            num_required_blocks = seq.get_num_logical_blocks() - self.block_manager.get_seq_num_blocks_allocated(seq.seq_id, BlockDevice.GPU)
             total_cpu_blocks_required = 0
             running_decodes_to_swap_out = []
             j = len(queue) - 1
@@ -250,6 +250,10 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                     break
                 decode_seq = queue[j]
                 num_blocks_allocated = self.block_manager.get_seq_num_blocks_allocated(decode_seq.seq_id, BlockDevice.GPU)
+                if not num_blocks_allocated:
+                    j -= 1
+                    continue
+
                 blocks_to_swap = min(num_blocks_allocated, num_required_blocks)
                 total_cpu_blocks_required += blocks_to_swap
                 if total_cpu_blocks_required > self.block_manager.get_num_free_blocks(BlockDevice.CPU):
@@ -259,16 +263,17 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 j -= 1
             
             if num_required_blocks <= self.block_manager.get_num_free_blocks(BlockDevice.GPU):
-                queue = queue[:j]
+                queue = queue[:j+1]
             else:
                 # NOTE: We allow skipping to the next sequence if we can't fit the current one
                 i += 1
                 continue
-
+            
             # Swap the sequences we promised to swap out
-            for seq, num_blocks_to_swap in running_decodes_to_swap_out:
-                self._swap_out(seq, num_blocks_to_swap)
-                swap_out_seq_ids.append(seq.seq_id)
+            for seq_to_swap, num_blocks_to_swap in running_decodes_to_swap_out:
+                print(f"Iteration {self._iteration_id}: Swapping out {num_blocks_to_swap} blocks in sequence {seq_to_swap.seq_id}")
+                self._swap_out(seq_to_swap, num_blocks_to_swap)
+                swap_out_seq_ids.append(seq_to_swap.seq_id)
                 swap_out_lens.append(num_blocks_to_swap)
 
             # Schedule the current sequence
@@ -284,7 +289,10 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 self.last_iteration_ran[seq.seq_id] = self._iteration_id
             elif seq.is_swapped_out():
                 print(f"Iteration {self._iteration_id}: Swapping in {seq.seq_id}")
-                assert self.block_manager.can_swap_in_and_append_slot(seq.seq_id, seq.get_num_logical_blocks())
+                assert self.block_manager.can_swap_in_and_append_slot(
+                    seq.seq_id,
+                    seq.get_num_logical_blocks()
+                )
                 self._begin_swap_in(seq)
                 begin_swap_in_seq_ids.append(seq.seq_id)
             else:
@@ -299,6 +307,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             [],
             [],
             swap_out_seq_ids,
+            swap_out_lens,
             begin_swap_in_seq_ids,
             scheduled_seq_id_metadata_list
         )

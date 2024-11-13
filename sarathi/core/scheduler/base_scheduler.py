@@ -5,6 +5,7 @@ from sarathi.config import BaseSchedulerConfig, CacheConfig, ModelConfig, Parall
 from sarathi.core.block_space_manager import DryRunBlockSpaceManager
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
 from sarathi.core.datatypes.sequence import Sequence
+from sarathi.core.datatypes.sequence_status import SequenceStatus
 from sarathi.logger import init_logger
 
 logger = init_logger(__name__)
@@ -126,24 +127,24 @@ class BaseScheduler(ABC):
         self,
         seq: Sequence,
     ) -> None:
-        assert seq.is_executing()
+        seq.check_transition(SequenceStatus.WAITING)
         self._free_seq(seq)
         self.waiting.insert(0, seq)
     
     def _begin_swap_in(self, seq: Sequence) -> None:
-        assert seq.is_swapped_out()
+        seq.check_transition(SequenceStatus.SWAPPING_IN)
         del self.swapped_out[seq.seq_id]
         self.swapping_in[seq.seq_id] = seq
         self.block_manager.begin_swap_in(seq.seq_id)
     
     def _finish_swap_in(self, seq: Sequence) -> None:
-        assert seq.is_swapping_in()
+        seq.check_transition(SequenceStatus.PAUSED)
         del self.swapping_in[seq.seq_id]
         self.swapped_in[seq.seq_id] = seq
         self.block_manager.finish_swap_in(seq.seq_id)
     
     def _swap_out(self, seq: Sequence, num_blocks_to_swap: Optional[int] = None) -> None:
-        assert seq.is_executing()
+        seq.check_transition(SequenceStatus.SWAPPED_OUT)
         if seq.seq_id in self.swapped_in:
             logger.warning(f"Sequence {seq.seq_id} to swap in was recently swapped out and not yet made progress")
             del self.swapped_in[seq.seq_id]  # NOTE: Maybe we didn't remove from swapped_in queue properly

@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from copy import deepcopy
 import enum
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from sarathi.core.datatypes.sequence import Sequence
 
@@ -142,7 +142,11 @@ class BaseBlockSpaceManager(ABC):
     def can_swap_in_and_append_slot(self, seq_id: str, num_logical_blocks: int) -> bool:
         assert isinstance(seq_id, str)
         assert BlockDevice.CPU in self._block_tables[seq_id]
-        return self.get_num_free_blocks(BlockDevice.GPU) >= num_logical_blocks - self.get_seq_num_blocks_allocated(seq_id, BlockDevice.CPU)
+        return self.get_num_free_blocks(BlockDevice.GPU) >= (
+            num_logical_blocks - 
+            self.get_seq_num_blocks_allocated(seq_id, BlockDevice.GPU) -
+            self.get_seq_num_blocks_allocated(seq_id, BlockDevice.CPU)
+        )
 
     def can_swap_out(self, seq_id: str) -> bool:
         assert isinstance(seq_id, str)
@@ -163,7 +167,7 @@ class BaseBlockSpaceManager(ABC):
         """Allocate a physical slot for a new token."""
         assert isinstance(seq, Sequence)
         num_blocks_to_allocate = seq.get_num_logical_blocks() - self.get_seq_num_blocks_allocated(seq.seq_id, BlockDevice.GPU)
-        assert num_blocks_to_allocate <= 1
+        assert num_blocks_to_allocate <= 1, f"Can only append one slot at a time. Requested: {num_blocks_to_allocate}. Sequence status: {seq.get_status()}"
         if num_blocks_to_allocate > 0:
             self._block_tables[seq.seq_id][BlockDevice.GPU] += self._allocators[BlockDevice.GPU].allocate(num_blocks_to_allocate)
     
@@ -257,26 +261,6 @@ class DryRunBlockSpaceManager(BaseBlockSpaceManager):
     def _init_allocator(self, num_blocks: int, watermark: Optional[float] = None) -> DryRunBlockAllocator:
         return DryRunBlockAllocator(num_blocks, watermark=watermark)
     
-    def begin_swap_in(self, seq_id: str) -> None:
-        assert isinstance(seq_id, str)
-        assert self.can_swap_in(seq_id)
-
-        self._block_tables[seq_id][BlockDevice.GPU] = self._allocators[BlockDevice.GPU].allocate(
-            self.get_seq_num_blocks_allocated(seq_id, BlockDevice.CPU)
-        )
-    
-    def finish_swap_in(self, seq_id: str) -> None:
-        assert isinstance(seq_id, str)
-        self._free_device_blocks(seq_id, BlockDevice.CPU)
-    
-    def swap_out(self, seq_id: str) -> None:
-        assert isinstance(seq_id, str)
-        assert self.can_swap_out(seq_id)
-        self._block_tables[seq_id][BlockDevice.CPU] = self._allocators[BlockDevice.CPU].allocate(
-            self.get_seq_num_blocks_allocated(seq_id, BlockDevice.GPU)
-        )
-        self._free_device_blocks(seq_id, BlockDevice.GPU)
-    
     def _free_device_blocks(self, seq_id: str, device: BlockDevice, num_blocks_to_free: Optional[int] = None) -> None:
         assert isinstance(seq_id, str)
         assert seq_id in self._block_tables
@@ -303,27 +287,31 @@ class BlockSpaceManager(BaseBlockSpaceManager):
 
     def __init__(self, block_size: int, num_gpu_blocks: int, num_cpu_blocks: int, max_model_len: int, watermark: float = 0.01) -> None:
         super().__init__(block_size, num_gpu_blocks, num_cpu_blocks, max_model_len, watermark=watermark)
-        self.__swap_in_mapping: Dict[str, List[int]] = {}
-        self.__swap_out_mapping: Dict[str, List[int]] = {}
+        self.__swap_in_mapping: Dict[str, List[Tuple[int, int]]] = {}
+        self.__swap_out_mapping: Dict[str, List[Tuple[int, int]]] = {}
 
     def _init_allocator(self, num_blocks: int, watermark: Optional[float] = None) -> BlockAllocator:
         return BlockAllocator(num_blocks, watermark=watermark)
 
     def _update_swap_in_mapping(self, seq_id: str) -> None:
         # NOTE: Zip stops as soon as the shortest list is exhausted
-        assert len(self._block_tables[seq_id][BlockDevice.CPU]) <= len(self._block_tables[seq_id][BlockDevice.GPU])
-        self.__swap_in_mapping[seq_id] = list(zip(self._block_tables[seq_id][BlockDevice.CPU], self._block_tables[seq_id][BlockDevice.GPU]))
+        self.__swap_in_mapping[seq_id] = list(zip(
+            self._block_tables[seq_id][BlockDevice.CPU],
+            self._block_tables[seq_id][BlockDevice.GPU]
+        ))
     
     def _update_swap_out_mapping(self, seq_id: str, num_blocks_to_swap: int) -> None:
-        assert len(self._block_tables[seq_id][BlockDevice.GPU]) >= num_blocks_to_swap
-        assert len(self._block_tables[seq_id][BlockDevice.CPU]) == num_blocks_to_swap
-        self.__swap_out_mapping[seq_id] = list(zip(self._block_tables[seq_id][BlockDevice.GPU][:num_blocks_to_swap], self._block_tables[seq_id][BlockDevice.CPU]))
+        self.__swap_out_mapping[seq_id] = list(zip(
+            # Prefix of GPU, copy to suffix of CPU
+            self._block_tables[seq_id][BlockDevice.GPU][:num_blocks_to_swap],
+            self._block_tables[seq_id][BlockDevice.CPU][-num_blocks_to_swap:]
+        ))
 
-    def get_swap_in_mapping(self, seq_id: str) -> List[int]:
+    def get_swap_in_mapping(self, seq_id: str) -> List[Tuple[int, int]]:
         assert isinstance(seq_id, str)
         return self.__swap_in_mapping[seq_id]
     
-    def get_swap_out_mapping(self, seq_id: str) -> List[int]:
+    def get_swap_out_mapping(self, seq_id: str) -> List[Tuple[int, int]]:
         assert isinstance(seq_id, str)
         return self.__swap_out_mapping[seq_id]
 

@@ -25,50 +25,30 @@ class BaseSequenceManager(ABC):
         self.seq_map[seq.seq_id] = seq
 
     def _free_seq(self, seq_id: str) -> None:
-        assert seq_id in self.seq_map
         del self.seq_map[seq_id]
     
     def _ignore_seq(self, seq_id: str) -> None:
-        assert seq_id in self.seq_map
-        seq = self.seq_map[seq_id]
-        seq.set_status(SequenceStatus.FINISHED_IGNORED)
+        self.seq_map[seq_id].set_status(SequenceStatus.FINISHED_IGNORED)
         self._free_seq(seq_id)
 
     def _preempt_seq(self, seq_id: str) -> None:
-        assert seq_id in self.seq_map
-        seq = self.seq_map[seq_id]
-        assert seq.is_executing()
-        seq.reset_for_recompute()
+        # Sets to WAITING inside
+        self.seq_map[seq_id].reset_for_recompute()
 
     def _swap_out_seq(self, seq_id: str, num_blocks_to_swap: Optional[int] = None) -> None:
-        assert seq_id in self.seq_map
-        seq = self.seq_map[seq_id]
-        assert seq.is_executing(), f"seq_id: {seq_id}, status: {seq.get_status()}"
-        seq.set_status(SequenceStatus.SWAPPED_OUT)
+        self.seq_map[seq_id].set_status(SequenceStatus.SWAPPED_OUT)
     
     def _begin_swap_in_seq(self, seq_id: str) -> None:
-        assert seq_id in self.seq_map
-        seq = self.seq_map[seq_id]
-        assert seq.is_swapped_out(), f"seq_id: {seq_id}, status: {seq.get_status()}"
-        seq.set_status(SequenceStatus.SWAPPING_IN)
+        self.seq_map[seq_id].set_status(SequenceStatus.SWAPPING_IN)
     
     def _finish_swap_in_seq(self, seq_id: str) -> None:
-        assert seq_id in self.seq_map
-        seq = self.seq_map[seq_id]
-        assert seq.is_swapping_in(), f"seq_id: {seq_id}, status: {seq.get_status()}"
-        seq.set_status(SequenceStatus.PAUSED)
+        self.seq_map[seq_id].set_status(SequenceStatus.PAUSED)
 
     def _pause_seq(self, seq_id: str) -> None:
-        assert seq_id in self.seq_map
-        seq = self.seq_map[seq_id]
-        assert seq.is_running(), f"seq_id: {seq_id}, status: {seq.get_status()}"
-        seq.set_status(SequenceStatus.PAUSED)
+        self.seq_map[seq_id].set_status(SequenceStatus.PAUSED)
 
     def _resume_seq(self, seq_id: str) -> None:
-        assert seq_id in self.seq_map
-        seq = self.seq_map[seq_id]
-        assert seq.is_waiting() or seq.is_paused(), f"seq_id: {seq_id}, status: {seq.get_status()}"
-        seq.set_status(SequenceStatus.RUNNING)
+        self.seq_map[seq_id].set_status(SequenceStatus.RUNNING)
 
     def _on_seq_scheduled(self, seq_id_metadata: SequenceScheduleMetadata) -> None:
         assert seq_id_metadata.seq_id in self.seq_map
@@ -89,6 +69,7 @@ class BaseSequenceManager(ABC):
         for seq_id in scheduler_outputs.preempted_seq_ids:
             self._preempt_seq(seq_id)
         
+        # Swap out
         if scheduler_outputs.swap_out_lens:
             for seq_id, num_blocks_to_swap in zip(
                 scheduler_outputs.swap_out_seq_ids,

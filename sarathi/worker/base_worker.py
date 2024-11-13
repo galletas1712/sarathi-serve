@@ -196,15 +196,11 @@ class BaseWorker:
 
         # Perform sync swap out
         now = time.perf_counter()
-        for seq_id in swap_out_mappings.keys():
-            self.metrics_store.on_swap_out_start(seq_id, start_timestamp=now)
+        for seq_id, mapping in swap_out_mappings.items():
+            self.metrics_store.on_swap_out_start(seq_id, len(mapping), start_timestamp=now)
 
         # This will wait for swap outs to finish
         self.cache_engine.swap_out(swap_out_mappings)
-
-        now = time.perf_counter()
-        for seq_id in swap_out_mappings.keys():
-            self.metrics_store.on_swap_out_end(seq_id, end_timestamp=now)
 
         # Perform async swap in after sync swap out
         now = time.perf_counter()

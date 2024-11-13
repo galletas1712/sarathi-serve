@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import time
 from typing import Any, Dict, List, Optional
 from collections import deque
@@ -25,11 +25,11 @@ class SwapInterval:
     """
     start_swap_out_batch_id: int
     start_swap_out_timestamp: float
-    finish_swap_out_timestamp: Optional[float] = None
     start_swap_in_batch_id: Optional[int] = None
     start_swap_in_timestamp: Optional[float] = None
     finish_swap_in_batch_id: Optional[int] = None
     finish_swap_in_timestamp: Optional[float] = None
+    swap_out_lens: List[int] = field(default_factory=list)
     timestamp_offset: int = 0
     batch_offset: int = 0
 
@@ -120,29 +120,17 @@ class SequenceMetrics:
         # Keep track of what the current swap interval is, append later
         self._curr_swap_interval: Optional[SwapInterval] = None
     
-    def start_swap_out(self, batch_id: int, start_timestamp: float):
-        assert self._curr_swap_interval is None
-        self._curr_swap_interval = SwapInterval(start_swap_out_batch_id=batch_id, start_swap_out_timestamp=start_timestamp)
-    
-    def finish_swap_out(self, end_timestamp: float):
-        assert (
-            self._curr_swap_interval is not None and
-            self._curr_swap_interval.start_swap_out_batch_id is not None and
-            self._curr_swap_interval.start_swap_out_timestamp is not None and
-            self._curr_swap_interval.finish_swap_out_timestamp is None and
-            self._curr_swap_interval.start_swap_in_batch_id is None and
-            self._curr_swap_interval.start_swap_in_timestamp is None and
-            self._curr_swap_interval.finish_swap_in_batch_id is None and
-            self._curr_swap_interval.finish_swap_in_timestamp is None
-        )
-        self._curr_swap_interval.finish_swap_out_timestamp = end_timestamp
+    def start_swap_out(self, batch_id: int, num_tokens: int, start_timestamp: float):
+        # NOTE: We support many swaps (if we incrementally swap)
+        if self._curr_swap_interval is None:
+            self._curr_swap_interval = SwapInterval(start_swap_out_batch_id=batch_id, start_swap_out_timestamp=start_timestamp)
+        self._curr_swap_interval.swap_out_lens.append(num_tokens)
     
     def start_swap_in(self, batch_id: int, start_timestamp: float):
         assert (
             self._curr_swap_interval is not None and
             self._curr_swap_interval.start_swap_out_batch_id is not None and
             self._curr_swap_interval.start_swap_out_timestamp is not None and
-            self._curr_swap_interval.finish_swap_out_timestamp is not None and
             self._curr_swap_interval.start_swap_in_batch_id is None and
             self._curr_swap_interval.start_swap_in_timestamp is None and
             self._curr_swap_interval.finish_swap_in_batch_id is None and
@@ -156,7 +144,6 @@ class SequenceMetrics:
             self._curr_swap_interval is not None and
             self._curr_swap_interval.start_swap_out_batch_id is not None and
             self._curr_swap_interval.start_swap_out_timestamp is not None and
-            self._curr_swap_interval.finish_swap_out_timestamp is not None and
             self._curr_swap_interval.start_swap_in_batch_id is not None and
             self._curr_swap_interval.start_swap_in_batch_id is not None and
             self._curr_swap_interval.start_swap_in_timestamp is not None and
@@ -325,25 +312,12 @@ class WorkerMetricsStore:
         
         self.curr_batch_is_prefill = None
     
-    def on_swap_out_start(self, seq_id: str, start_timestamp: float):
+    def on_swap_out_start(self, seq_id: str, num_tokens: int, start_timestamp: float):
         if not self.initial_memory_profiling_done:
             return
 
-        assert (
-            seq_id in self.sequence_metrics and 
-            self.sequence_metrics[seq_id]._curr_swap_interval is None
-        )
-        self.sequence_metrics[seq_id].start_swap_out(self.batch_metrics[-1].batch_id, start_timestamp)
-    
-    def on_swap_out_end(self, seq_id: str, end_timestamp: float):
-        if not self.initial_memory_profiling_done:
-            return
-
-        assert (
-            seq_id in self.sequence_metrics and 
-            self.sequence_metrics[seq_id]._curr_swap_interval is not None
-        )
-        self.sequence_metrics[seq_id].finish_swap_out(end_timestamp)
+        assert seq_id in self.sequence_metrics
+        self.sequence_metrics[seq_id].start_swap_out(self.batch_metrics[-1].batch_id, num_tokens, start_timestamp)
     
     def on_swap_in_start(self, seq_id: str, start_timestamp: float):
         if not self.initial_memory_profiling_done:

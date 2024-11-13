@@ -79,13 +79,13 @@ class WorkerSequenceManager(BaseSequenceManager):
             for seq_id_metadata in scheduler_outputs.scheduled_seq_id_metadata_list
         ]
 
-    def get_swap_out_mappings(self, swap_out_seq_ids: List[str]) -> Dict[str, List[int]]:
+    def get_swap_out_mappings(self, swap_out_seq_ids: List[str]) -> Dict[str, List[Tuple[int, int]]]:
         return {
             seq_id: self.block_manager.get_swap_out_mapping(seq_id)
             for seq_id in swap_out_seq_ids
         }
 
-    def get_swap_in_mappings(self, swap_in_seq_ids: List[str]) -> Dict[str, List[int]]:
+    def get_swap_in_mappings(self, swap_in_seq_ids: List[str]) -> Dict[str, List[Tuple[int, int]]]:
         return {
             seq_id: self.block_manager.get_swap_in_mapping(seq_id)
             for seq_id in swap_in_seq_ids
