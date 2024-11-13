@@ -110,7 +110,6 @@ class BaseBlockSpaceManager(ABC):
 
     def get_seq_num_blocks_allocated(self, seq_id: str, device: BlockDevice) -> int:
         assert isinstance(seq_id, str)
-        assert seq_id in self._block_tables
         if device not in self._block_tables[seq_id]:
             return 0
         assert isinstance(self._block_tables[seq_id][device], list) or isinstance(self._block_tables[seq_id][device], int)
@@ -118,12 +117,10 @@ class BaseBlockSpaceManager(ABC):
 
     def is_allocated_in_gpu(self, seq_id: str) -> bool:
         assert isinstance(seq_id, str)
-        assert seq_id in self._block_tables
         return BlockDevice.GPU in self._block_tables[seq_id]
 
     def is_allocated_in_cpu(self, seq_id: str) -> bool:
         assert isinstance(seq_id, str)
-        assert seq_id in self._block_tables
         return BlockDevice.CPU in self._block_tables[seq_id]
     
     def can_allocate(self, seq: Sequence, device: BlockDevice = BlockDevice.GPU) -> bool:
@@ -139,16 +136,17 @@ class BaseBlockSpaceManager(ABC):
 
     def can_swap_in(self, seq_id: str) -> bool:
         assert isinstance(seq_id, str)
-        assert seq_id in self._block_tables and BlockDevice.GPU not in self._block_tables[seq_id] and BlockDevice.CPU in self._block_tables[seq_id]
+        assert BlockDevice.CPU in self._block_tables[seq_id]
         return self.get_num_free_blocks(BlockDevice.GPU) >= self.get_seq_num_blocks_allocated(seq_id, BlockDevice.CPU)
     
     def can_swap_in_and_append_slot(self, seq_id: str, num_logical_blocks: int) -> bool:
         assert isinstance(seq_id, str)
-        return self.get_num_free_blocks(BlockDevice.GPU) >= num_logical_blocks
+        assert BlockDevice.CPU in self._block_tables[seq_id]
+        return self.get_num_free_blocks(BlockDevice.GPU) >= num_logical_blocks - self.get_seq_num_blocks_allocated(seq_id, BlockDevice.CPU)
 
     def can_swap_out(self, seq_id: str) -> bool:
         assert isinstance(seq_id, str)
-        assert seq_id in self._block_tables and BlockDevice.CPU not in self._block_tables[seq_id] and BlockDevice.GPU in self._block_tables[seq_id]
+        assert BlockDevice.GPU in self._block_tables[seq_id]
         return self.get_num_free_blocks(BlockDevice.CPU) >= self.get_seq_num_blocks_allocated(seq_id, BlockDevice.GPU)
     
     ########## Allocations/Swaps ##########
@@ -173,41 +171,51 @@ class BaseBlockSpaceManager(ABC):
         assert isinstance(seq_id, str)
         assert self.can_swap_in(seq_id)
 
-        self._block_tables[seq_id][BlockDevice.GPU] = self._allocators[BlockDevice.GPU].allocate(
+        newly_allocated_gpu_blocks = self._allocators[BlockDevice.GPU].allocate(
             self.get_seq_num_blocks_allocated(seq_id, BlockDevice.CPU)
         )
-        assert self.get_seq_num_blocks_allocated(seq_id, BlockDevice.CPU) == self.get_seq_num_blocks_allocated(seq_id, BlockDevice.GPU)
+        self._block_tables[seq_id][BlockDevice.GPU] = (
+            # NOTE: Ordering matters for prefix/suffix - here we reverse the order
+            newly_allocated_gpu_blocks + self._block_tables[seq_id][BlockDevice.GPU]
+            if BlockDevice.GPU in self._block_tables[seq_id]
+            else newly_allocated_gpu_blocks
+        )
         self._update_swap_in_mapping(seq_id)
 
     def finish_swap_in(self, seq_id: str):
         assert isinstance(seq_id, str)
         self._free_device_blocks(seq_id, BlockDevice.CPU)
 
-    def swap_out(self, seq_id: str):
+    def swap_out(self, seq_id: str, num_blocks_to_swap: Optional[int] = None):
         assert isinstance(seq_id, str)
         assert self.can_swap_out(seq_id)
 
-        self._block_tables[seq_id][BlockDevice.CPU] = self._allocators[BlockDevice.CPU].allocate(
-            self.get_seq_num_blocks_allocated(seq_id, BlockDevice.GPU)
+        num_allocated_blocks = self.get_seq_num_blocks_allocated(seq_id, BlockDevice.GPU)
+        if num_blocks_to_swap is None:
+            num_blocks_to_swap = num_allocated_blocks
+        assert num_blocks_to_swap <= num_allocated_blocks
+        
+        newly_allocated_cpu_blocks = self._allocators[BlockDevice.CPU].allocate(num_blocks_to_swap)
+        self._block_tables[seq_id][BlockDevice.CPU] = (
+            # NOTE: Ordering matters for prefix/suffix
+            self._block_tables[seq_id][BlockDevice.CPU] + newly_allocated_cpu_blocks
+            if BlockDevice.CPU in self._block_tables[seq_id]
+            else newly_allocated_cpu_blocks
         )
-        assert self.get_seq_num_blocks_allocated(seq_id, BlockDevice.GPU) == self.get_seq_num_blocks_allocated(seq_id, BlockDevice.CPU)
-        self._update_swap_out_mapping(seq_id)
-        self._free_device_blocks(seq_id, BlockDevice.GPU)
+        self._update_swap_out_mapping(seq_id, num_blocks_to_swap)
+        self._free_device_blocks(seq_id, BlockDevice.GPU, num_blocks_to_free=num_blocks_to_swap)
     
-    @abstractmethod
     def _update_swap_in_mapping(self, seq_id: str) -> None:
         raise NotImplementedError
     
-    @abstractmethod
-    def _update_swap_out_mapping(self, seq_id: str) -> None:
+    def _update_swap_out_mapping(self, seq_id: str, num_blocks_to_swap: int) -> None:
         raise NotImplementedError
-
+    
     ########## Frees ##########
 
-    def _free_device_blocks(self, seq_id: str, device: BlockDevice) -> None:
-        assert isinstance(seq_id, str)
-        self._allocators[device].free(self._block_tables[seq_id][device])
-        del self._block_tables[seq_id][device]
+    @abstractmethod
+    def _free_device_blocks(self, seq_id: str, device: BlockDevice, num_blocks_to_free: Optional[int] = None) -> None:
+        raise NotImplementedError
 
     def _free_block_table(self, seq_id: str) -> None:
         assert isinstance(seq_id, str)
@@ -269,12 +277,27 @@ class DryRunBlockSpaceManager(BaseBlockSpaceManager):
         )
         self._free_device_blocks(seq_id, BlockDevice.GPU)
     
+    def _free_device_blocks(self, seq_id: str, device: BlockDevice, num_blocks_to_free: Optional[int] = None) -> None:
+        assert isinstance(seq_id, str)
+        assert seq_id in self._block_tables
+        assert device in self._block_tables[seq_id]
+
+        num_allocated_blocks = self.get_seq_num_blocks_allocated(seq_id, device)
+        if num_blocks_to_free is None:
+            num_blocks_to_free = self.get_seq_num_blocks_allocated(seq_id, device)
+        assert num_blocks_to_free <= num_allocated_blocks
+        self._allocators[device].free(num_blocks_to_free)
+        if num_allocated_blocks == num_blocks_to_free:
+            del self._block_tables[seq_id][device]
+        else:
+            self._block_tables[seq_id][device] -= num_blocks_to_free
+        
     def _update_swap_in_mapping(self, seq_id: str) -> None:
         pass
 
-    def _update_swap_out_mapping(self, seq_id: str) -> None:
+    def _update_swap_out_mapping(self, seq_id: str, num_blocks_to_swap: int) -> None:
         pass
-    
+
 
 class BlockSpaceManager(BaseBlockSpaceManager):
 
@@ -287,10 +310,14 @@ class BlockSpaceManager(BaseBlockSpaceManager):
         return BlockAllocator(num_blocks, watermark=watermark)
 
     def _update_swap_in_mapping(self, seq_id: str) -> None:
+        # NOTE: Zip stops as soon as the shortest list is exhausted
+        assert len(self._block_tables[seq_id][BlockDevice.CPU]) <= len(self._block_tables[seq_id][BlockDevice.GPU])
         self.__swap_in_mapping[seq_id] = list(zip(self._block_tables[seq_id][BlockDevice.CPU], self._block_tables[seq_id][BlockDevice.GPU]))
     
-    def _update_swap_out_mapping(self, seq_id: str) -> None:
-        self.__swap_out_mapping[seq_id] = list(zip(self._block_tables[seq_id][BlockDevice.GPU], self._block_tables[seq_id][BlockDevice.CPU]))
+    def _update_swap_out_mapping(self, seq_id: str, num_blocks_to_swap: int) -> None:
+        assert len(self._block_tables[seq_id][BlockDevice.GPU]) >= num_blocks_to_swap
+        assert len(self._block_tables[seq_id][BlockDevice.CPU]) == num_blocks_to_swap
+        self.__swap_out_mapping[seq_id] = list(zip(self._block_tables[seq_id][BlockDevice.GPU][:num_blocks_to_swap], self._block_tables[seq_id][BlockDevice.CPU]))
 
     def get_swap_in_mapping(self, seq_id: str) -> List[int]:
         assert isinstance(seq_id, str)
@@ -299,6 +326,28 @@ class BlockSpaceManager(BaseBlockSpaceManager):
     def get_swap_out_mapping(self, seq_id: str) -> List[int]:
         assert isinstance(seq_id, str)
         return self.__swap_out_mapping[seq_id]
+
+    def _free_device_blocks(self, seq_id: str, device: BlockDevice, num_blocks_to_free: Optional[int] = None) -> None:
+        assert isinstance(seq_id, str)
+        assert seq_id in self._block_tables
+        assert device in self._block_tables[seq_id]
+
+        num_allocated_blocks = self.get_seq_num_blocks_allocated(seq_id, device)
+        if num_blocks_to_free is None:
+            num_blocks_to_free = self.get_seq_num_blocks_allocated(seq_id, device)
+        assert num_blocks_to_free <= num_allocated_blocks
+        self._allocators[device].free(self._block_tables[seq_id][device][:num_blocks_to_free])  # NOTE: Freeing prefix
+        if num_allocated_blocks == num_blocks_to_free:
+            del self._block_tables[seq_id][device]
+        else:
+            self._block_tables[seq_id][device] = self._block_tables[seq_id][device][num_blocks_to_free:]  # NOTE: Removing prefix
+    
+    def _free_block_table(self, seq_id: str) -> None:
+        super()._free_block_table(seq_id)
+        if seq_id in self.__swap_in_mapping:
+            del self.__swap_in_mapping[seq_id]
+        if seq_id in self.__swap_out_mapping:
+            del self.__swap_out_mapping[seq_id]
     
     ########## Metadata ##########
     

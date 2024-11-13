@@ -45,6 +45,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 [],
                 [],
                 [],
+                [],
             )
 
         running = [*running_decodes] # NOTE: running decodes, doesn't strictly have to come first in order
@@ -127,6 +128,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             [],
             [],
             [],
+            [],
             scheduled_seq_id_metadata_list
         )
 
@@ -199,6 +201,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             [],
             [],
             swap_out_seq_ids,
+            [],
             begin_swap_in_seq_ids,
             scheduled_seq_id_metadata_list
         )

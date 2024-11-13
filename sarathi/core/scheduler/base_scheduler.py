@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from sarathi.config import BaseSchedulerConfig, CacheConfig, ModelConfig, ParallelConfig
 from sarathi.core.block_space_manager import DryRunBlockSpaceManager
@@ -80,6 +80,7 @@ class BaseScheduler(ABC):
                 ignored_seq_ids=[],
                 preempted_seq_ids=[],
                 swap_out_seq_ids=[],
+                swap_out_lens=[],
                 begin_swap_in_seq_ids=[],
                 scheduled_seq_id_metadata_list=[],
             )
@@ -141,12 +142,12 @@ class BaseScheduler(ABC):
         self.swapped_in[seq.seq_id] = seq
         self.block_manager.finish_swap_in(seq.seq_id)
     
-    def _swap_out(self, seq: Sequence) -> None:
+    def _swap_out(self, seq: Sequence, num_blocks_to_swap: Optional[int] = None) -> None:
         assert seq.is_executing()
         if seq.seq_id in self.swapped_in:
             logger.warning(f"Sequence {seq.seq_id} to swap in was recently swapped out and not yet made progress")
             del self.swapped_in[seq.seq_id]  # NOTE: Maybe we didn't remove from swapped_in queue properly
-        self.block_manager.swap_out(seq.seq_id)
+        self.block_manager.swap_out(seq.seq_id, num_blocks_to_swap)
         self.swapped_out[seq.seq_id] = seq
     
     def _check_request_prompt_length(self, seq: Sequence) -> bool:

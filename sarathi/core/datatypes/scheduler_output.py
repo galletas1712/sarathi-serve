@@ -11,6 +11,7 @@ class SchedulerOutputs:
     ignored_seq_ids: List[str]
     preempted_seq_ids: List[str]
     swap_out_seq_ids: List[str]
+    swap_out_lens: List[int]
     begin_swap_in_seq_ids: List[str]
     scheduled_seq_id_metadata_list: List[SequenceScheduleMetadata]
 

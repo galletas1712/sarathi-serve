@@ -1,4 +1,4 @@
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from sarathi.config import SystemConfig
 from sarathi.core.block_space_manager import BlockDevice, BlockSpaceManager
@@ -43,9 +43,9 @@ class WorkerSequenceManager(BaseSequenceManager):
         super()._finish_swap_in_seq(seq_id)
         self.block_manager.finish_swap_in(seq_id)
     
-    def _swap_out_seq(self, seq_id: str) -> None:
-        super()._swap_out_seq(seq_id)
-        self.block_manager.swap_out(seq_id)
+    def _swap_out_seq(self, seq_id: str, num_blocks_to_swap: Optional[int] = None) -> None:
+        super()._swap_out_seq(seq_id, num_blocks_to_swap)
+        self.block_manager.swap_out(seq_id, num_blocks_to_swap)
     
     def _on_seq_scheduled(self, seq_id_metadata: SequenceScheduleMetadata) -> None:
         assert seq_id_metadata.seq_id in self.seq_map
