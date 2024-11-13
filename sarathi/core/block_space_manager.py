@@ -144,8 +144,7 @@ class BaseBlockSpaceManager(ABC):
         assert BlockDevice.CPU in self._block_tables[seq_id]
         return self.get_num_free_blocks(BlockDevice.GPU) >= (
             num_logical_blocks - 
-            self.get_seq_num_blocks_allocated(seq_id, BlockDevice.GPU) -
-            self.get_seq_num_blocks_allocated(seq_id, BlockDevice.CPU)
+            self.get_seq_num_blocks_allocated(seq_id, BlockDevice.GPU)
         )
 
     def can_swap_out(self, seq_id: str) -> bool:
