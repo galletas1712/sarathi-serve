@@ -20,7 +20,7 @@ from sarathi.logger import init_logger
 from sarathi.metrics.constants import CpuOperationMetrics
 from sarathi.metrics.cpu_timer import CpuTimer
 from sarathi.metrics.metrics_store import MetricsStore
-from sarathi.transformers_utils.tokenizer import get_tokenizer
+from sarathi.utils.transformers.tokenizer import get_tokenizer
 from sarathi.utils import Counter, get_ip, unset_cuda_visible_devices
 from sarathi.utils.threading_utils import synchronized
 

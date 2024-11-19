@@ -5,7 +5,7 @@ from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 from sarathi.config import SystemConfig
 from sarathi.core.datatypes.sequence import DecodeableSequence
 from sarathi.core.sequence_manager.base_sequence_manager import BaseSequenceManager
-from sarathi.transformers_utils.tokenizer import detokenize_incrementally
+from sarathi.utils.transformers.tokenizer import detokenize_incrementally
 
 
 class EngineSequenceManager(BaseSequenceManager):

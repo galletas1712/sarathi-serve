@@ -2,15 +2,6 @@ from typing import Optional
 
 from transformers import AutoConfig, PretrainedConfig
 
-from sarathi.transformers_utils.configs import *  # pylint: disable=wildcard-import
-
-_CONFIG_REGISTRY = {
-    "qwen": QWenConfig,
-    "RefinedWeb": RWConfig,  # For tiiuae/falcon-40b(-instruct)
-    "RefinedWebModel": RWConfig,  # For tiiuae/falcon-7b(-instruct)
-    "yi": YiConfig,
-}
-
 
 def get_config(
     model: str, trust_remote_code: bool, revision: Optional[str] = None
@@ -33,7 +24,4 @@ def get_config(
             raise RuntimeError(err_msg) from e
         else:
             raise e
-    if config.model_type in _CONFIG_REGISTRY:
-        config_class = _CONFIG_REGISTRY[config.model_type]
-        config = config_class.from_pretrained(model, revision=revision)
     return config

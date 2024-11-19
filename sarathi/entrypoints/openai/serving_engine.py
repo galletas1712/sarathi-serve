@@ -14,7 +14,7 @@ from sarathi.entrypoints.openai.protocol import (
     ModelPermission,
 )
 from sarathi.logger import init_logger
-from sarathi.transformers_utils.tokenizer import get_tokenizer
+from sarathi.utils.transformers.tokenizer import get_tokenizer
 
 logger = init_logger(__name__)
 
