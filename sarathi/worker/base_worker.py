@@ -192,7 +192,7 @@ class BaseWorker:
 
         # NOTE: Ordering of which ones are swapped out first
         swap_out_mappings = self.seq_manager.get_swap_out_mappings(scheduler_outputs.swap_out_seq_ids)
-        swap_in_mappings = self.seq_manager.get_swap_in_mappings(scheduler_outputs.begin_swap_in_seq_ids)
+        swap_in_mappings = self.seq_manager.get_swap_in_mappings(scheduler_outputs.swap_in_seq_ids)
 
         # Perform sync swap out
         now = time.perf_counter()
@@ -207,7 +207,10 @@ class BaseWorker:
         for seq_id in swap_in_mappings.keys():
             self.metrics_store.on_swap_in_start(seq_id, start_timestamp=now)
 
-        self.cache_engine.begin_swap_in(swap_in_mappings)
+        if self.config.cache_config.async_swap_in:
+            self.cache_engine.begin_swap_in(swap_in_mappings)
+        else:
+            self.cache_engine.swap_in(swap_in_mappings)
 
         if seq_exec_metadata_list:
             assert not scheduler_outputs.is_empty()  # Superset

@@ -82,7 +82,7 @@ class BaseScheduler(ABC):
                 preempted_seq_ids=[],
                 swap_out_seq_ids=[],
                 swap_out_lens=[],
-                begin_swap_in_seq_ids=[],
+                swap_in_seq_ids=[],
                 scheduled_seq_id_metadata_list=[],
             )
 
@@ -136,6 +136,8 @@ class BaseScheduler(ABC):
         del self.swapped_out[seq.seq_id]
         self.swapping_in[seq.seq_id] = seq
         self.block_manager.begin_swap_in(seq.seq_id)
+        if not self.cache_config.async_swap_in:
+            self._finish_swap_in(seq)
     
     def _finish_swap_in(self, seq: Sequence) -> None:
         seq.check_transition(SequenceStatus.PAUSED)
@@ -143,6 +145,12 @@ class BaseScheduler(ABC):
         self.swapped_in[seq.seq_id] = seq
         self.block_manager.finish_swap_in(seq.seq_id)
     
+    def _swap_in(self, seq: Sequence):
+        self._begin_swap_in(seq)
+        if not self.cache_config.async_swap_in:
+            self._finish_swap_in(seq)
+        seq.check_transition(SequenceStatus.RUNNING)  # NOTE: If we synchronously swap in, we can run the sequence immediately
+
     def _swap_out(self, seq: Sequence, num_blocks_to_swap: Optional[int] = None) -> None:
         seq.check_transition(SequenceStatus.SWAPPED_OUT)
         if seq.seq_id in self.swapped_in:

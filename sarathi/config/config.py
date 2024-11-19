@@ -165,6 +165,10 @@ class CacheConfig:
             "help": "Number of CPU blocks for caching."
         },
     )
+    async_swap_in: bool = field(
+        default=False,
+        metadata={"help": "Whether to asynchronously swap in sequences."},
+    )
 
 
 @dataclass

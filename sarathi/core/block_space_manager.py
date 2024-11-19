@@ -188,6 +188,12 @@ class BaseBlockSpaceManager(ABC):
     def finish_swap_in(self, seq_id: str):
         assert isinstance(seq_id, str)
         self._free_device_blocks(seq_id, BlockDevice.CPU)
+    
+    def swap_in(self, seq_id: str):
+        assert isinstance(seq_id, str)
+        assert self.can_swap_in(seq_id)
+        self.begin_swap_in(seq_id)
+        self.finish_swap_in(seq_id)
 
     def swap_out(self, seq_id: str, num_blocks_to_swap: Optional[int] = None):
         assert isinstance(seq_id, str)

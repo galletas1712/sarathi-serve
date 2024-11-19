@@ -237,6 +237,6 @@ class SarathiScheduler(BaseScheduler):
             ignored_seq_ids=ignored_seq_ids,
             preempted_seq_ids=preempted_seq_ids,
             swap_out_seq_ids=[],
-            begin_swap_in_seq_ids=[],
+            swap_in_seq_ids=[],
             scheduled_seq_id_metadata_list=scheduled_seq_id_metadata_list,
         )

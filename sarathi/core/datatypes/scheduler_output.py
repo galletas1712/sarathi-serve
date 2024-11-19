@@ -12,10 +12,10 @@ class SchedulerOutputs:
     preempted_seq_ids: List[str]
     swap_out_seq_ids: List[str]
     swap_out_lens: List[int]
-    begin_swap_in_seq_ids: List[str]
+    swap_in_seq_ids: List[str]
     scheduled_seq_id_metadata_list: List[SequenceScheduleMetadata]
 
     def is_empty(self) -> bool:
         # Used to check if we should run execute_model at all (but that includes cache swapping)
         # NOTE: pipeline_parallel_engine has a different definition and this is invalid
-        return not self.scheduled_seq_id_metadata_list and not self.begin_swap_in_seq_ids and not self.swap_out_seq_ids
+        return not self.scheduled_seq_id_metadata_list and not self.swap_in_seq_ids and not self.swap_out_seq_ids

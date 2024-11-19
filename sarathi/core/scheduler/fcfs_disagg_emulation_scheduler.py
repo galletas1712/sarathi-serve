@@ -135,7 +135,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
     def _schedule_decodes(self, running_decodes: List[Sequence], now: float):
         running = []
         swap_out_seq_ids = []
-        begin_swap_in_seq_ids = []
+        swap_in_seq_ids = []
         scheduled_seq_id_metadata_list = []
 
         num_batched_tokens = 0
@@ -191,8 +191,8 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 elif seq.is_swapped_out():
                     print(f"Iteration {self._iteration_id}: Swapping in {seq.seq_id}")
                     assert self.block_manager.can_swap_in_and_append_slot(seq.seq_id, seq.get_num_logical_blocks())
-                    self._begin_swap_in(seq)
-                    begin_swap_in_seq_ids.append(seq.seq_id)
+                    self._swap_in(seq)
+                    swap_in_seq_ids.append(seq.seq_id)
                 else:
                     assert False, f"Sequence {seq.seq_id} is in an invalid state: {seq.get_status()}"
         
@@ -202,6 +202,6 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             [],
             swap_out_seq_ids,
             [],
-            begin_swap_in_seq_ids,
+            swap_in_seq_ids,
             scheduled_seq_id_metadata_list
         )

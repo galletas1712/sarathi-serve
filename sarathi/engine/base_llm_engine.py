@@ -400,8 +400,8 @@ class BaseLLMEngine:
         print(f"Running: {[meta.seq_id for meta in scheduler_outputs.scheduled_seq_id_metadata_list]}")
         if scheduler_outputs.swap_out_seq_ids:
             print(f"Swap out: {scheduler_outputs.swap_out_seq_ids}")
-        if scheduler_outputs.begin_swap_in_seq_ids:
-            print(f"Begin swap in: {scheduler_outputs.begin_swap_in_seq_ids}")
+        if scheduler_outputs.swap_in_seq_ids:
+            print(f"To swap in: {scheduler_outputs.swap_in_seq_ids}")
 
         # This will perform state transitions
         self.seq_manager.on_schedule(scheduler_outputs)

@@ -69,7 +69,13 @@ class CacheEngine:
                                                 src_to_dst)
                 finish_event.record()
                 self.finish_swap_in_events[seq_id] = finish_event
-
+    
+    def swap_in(self, swap_mapping: Dict[str, List[Tuple[int, int]]]) -> None:
+        self.begin_swap_in(swap_mapping=swap_mapping)
+        self.swap_in_stream.synchronize()
+        self.pop_finished_swap_ins()
+        assert not self.finish_swap_in_events
+    
     def pop_finished_swap_ins(self) -> Tuple[List[str], List[str]]:
         finished_swap_in_seq_ids = []
         logger.debug(f"Swap in events: {list(self.finish_swap_in_events.items())}")

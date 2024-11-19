@@ -43,6 +43,10 @@ class WorkerSequenceManager(BaseSequenceManager):
         super()._finish_swap_in_seq(seq_id)
         self.block_manager.finish_swap_in(seq_id)
     
+    def _swap_in_seq(self, seq_id: str) -> None:
+        super()._swap_in_seq(seq_id)
+        self.block_manager.swap_in(seq_id)
+    
     def _swap_out_seq(self, seq_id: str, num_blocks_to_swap: Optional[int] = None) -> None:
         super()._swap_out_seq(seq_id, num_blocks_to_swap)
         self.block_manager.swap_out(seq_id, num_blocks_to_swap)

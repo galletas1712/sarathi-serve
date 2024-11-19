@@ -43,6 +43,9 @@ class BaseSequenceManager(ABC):
     
     def _finish_swap_in_seq(self, seq_id: str) -> None:
         self.seq_map[seq_id].set_status(SequenceStatus.PAUSED)
+    
+    def _swap_in_seq(self, seq_id: str) -> None:
+        self.seq_map[seq_id].set_status(SequenceStatus.RUNNING)
 
     def _pause_seq(self, seq_id: str) -> None:
         self.seq_map[seq_id].set_status(SequenceStatus.PAUSED)
@@ -80,8 +83,11 @@ class BaseSequenceManager(ABC):
             for seq_id in scheduler_outputs.swap_out_seq_ids:
                 self._swap_out_seq(seq_id)
         
-        for seq_id in scheduler_outputs.begin_swap_in_seq_ids:
-            self._begin_swap_in_seq(seq_id)
+        for seq_id in scheduler_outputs.swap_in_seq_ids:
+            if self.config.cache_config.async_swap_in:
+                self._begin_swap_in_seq(seq_id)
+            else:
+                self._swap_in_seq(seq_id)
         
         for seq_id_metadata in scheduler_outputs.scheduled_seq_id_metadata_list:
             self._on_seq_scheduled(seq_id_metadata)  # This will call _resume_seq inside
