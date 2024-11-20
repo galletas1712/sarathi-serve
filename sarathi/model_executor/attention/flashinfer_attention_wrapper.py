@@ -47,7 +47,9 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
         self.append_kv_page_indices_tensor = None
         self.append_kv_page_indptr_tensor = None
         self.append_kv_last_page_len_tensor = None
-    
+
+        self.duplicate_stream = torch.cuda.Stream(device)
+        
     def to_int_tensor(self, data: List[int]) -> torch.Tensor:
         return torch.tensor(data, dtype=torch.int32, device="cuda")
 
@@ -210,6 +212,8 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
         self.is_metadata_initialized = False
 
         if hasattr(self, "duplicate_mapping"):
+            # NOTE: Synchronize the duplication stream at the end of ALL layers
+            self.duplicate_stream.synchronize()
             del self.duplicate_mapping
 
     def forward(
@@ -247,15 +251,6 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
             )
 
         # TODO: timer
-        if self.cache_engine.duplicate_kv_cache:
-            assert layer_id is not None
-            assert hasattr(self, "duplicate_mapping") and self.duplicate_mapping is not None
-            swap_blocks(
-                self.cache_engine.gpu_cache[layer_id],
-                self.cache_engine.cpu_cache[layer_id],
-                self.duplicate_mapping
-            )
-
         with self.get_timer(OperationMetrics.ATTN_PREFILL, layer_id):
             if self.contains_prefill:
                 output[: self.num_prefill_tokens] = self.prefill_wrapper.forward(
@@ -278,5 +273,16 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
 
         with self.get_timer(OperationMetrics.ATTN_OUTPUT_RESHAPE, layer_id):
             output = output.reshape(-1, self.num_q_heads * self.head_dim)
+
+        if self.cache_engine.duplicate_kv_cache:
+            assert layer_id is not None
+            assert hasattr(self, "duplicate_mapping") and self.duplicate_mapping is not None
+
+            with torch.cuda.stream(self.duplicate_stream):
+                swap_blocks(
+                    self.cache_engine.gpu_cache[layer_id],
+                    self.cache_engine.cpu_cache[layer_id],
+                    self.duplicate_mapping
+                )
 
         return output
