@@ -149,7 +149,6 @@ class BaseSequenceManager(ABC):
                     seq_id_metadata.prompt_chunk_len
                 )
 
-            print(f"Pausing {seq_id} with state {seq.get_status()}")
             self._pause_seq(seq_id)
 
             finished = self._process_seq_output(
