@@ -18,7 +18,7 @@ from sarathi.core.sequence_manager.worker_sequence_manager import WorkerSequence
 from sarathi.logger import init_logger
 from sarathi.metrics.alt_metrics_store import WorkerMetricsStore
 from sarathi.model_executor.utils import set_random_seed
-from sarathi.model_executor.attention import set_attention_backend
+from sarathi.model_executor.attention import get_attention_wrapper, set_attention_backend
 from sarathi.model_executor.model_runner import ModelRunner
 from sarathi.model_executor.parallel_utils.parallel_state import (
     get_pipeline_model_parallel_rank,
@@ -161,6 +161,8 @@ class BaseWorker:
             self.config,
         )
 
+        get_attention_wrapper().attach_cache_engine(self.cache_engine)
+
         self.execution_thread.start()
 
     def wait_till_ready(self) -> None:
@@ -200,7 +202,9 @@ class BaseWorker:
             self.metrics_store.on_swap_out_start(seq_id, len(mapping), start_timestamp=now)
 
         # This will wait for swap outs to finish
-        self.cache_engine.swap_out(swap_out_mappings)
+        if not self.config.cache_config.duplicate_kv_cache:
+            # NOTE: We don't actually perform the cache swap out operation, since it's already all stored in host memory
+            self.cache_engine.swap_out(swap_out_mappings)
 
         # Perform async swap in after sync swap out
         now = time.perf_counter()
@@ -218,9 +222,14 @@ class BaseWorker:
         if seq_exec_metadata_list:
             assert not scheduler_outputs.is_empty()  # Superset
             # print(f"Iteration: {self.curr_batch_id}, executing model!")
+            # NOTE: Under KV cache duplication, model_runner is responsible for pipelining KV cache out to swap
             sampler_outputs = self.model_runner.run(
                 seq_exec_metadata_list,
-                self.cache_engine.gpu_cache,
+                decode_mapping=(
+                    self.seq_manager.block_manager.get_duplicate_mapping([seq.seq_id for seq in seq_exec_metadata_list])
+                    if self.config.cache_config.duplicate_kv_cache
+                    else None
+                )
             )
             # print(f"Iteration: {self.curr_batch_id}, model executed!")
         else:

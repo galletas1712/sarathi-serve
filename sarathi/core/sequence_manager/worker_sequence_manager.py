@@ -21,6 +21,7 @@ class WorkerSequenceManager(BaseSequenceManager):
             config.cache_config.block_size,
             config.cache_config.num_gpu_blocks,
             config.cache_config.num_cpu_blocks,
+            config.duplicate_kv_cache,
             config.model_config.max_model_len,
         )
 

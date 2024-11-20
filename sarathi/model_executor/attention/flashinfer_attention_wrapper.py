@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import torch
 from flashinfer import BatchPrefillWithPagedKVCacheWrapper, append_paged_kv_cache
@@ -7,6 +7,7 @@ from sarathi.config import ModelConfig, ParallelConfig
 from sarathi.core.datatypes.sequence import SequenceExecutionMetadata
 from sarathi.metrics.constants import OperationMetrics
 from sarathi.model_executor.attention.base_attention_wrapper import BaseAttentionWrapper
+from sarathi.worker.cache_engine import CacheEngine
 
 
 class FlashinferAttentionWrapper(BaseAttentionWrapper):
@@ -46,6 +47,9 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
         self.append_kv_page_indices_tensor = None
         self.append_kv_page_indptr_tensor = None
         self.append_kv_last_page_len_tensor = None
+    
+    def attach_cache_engine(self, cache_engine: CacheEngine) -> None:
+        self.cache_engine = cache_engine
 
     def to_int_tensor(self, data: List[int]) -> torch.Tensor:
         return torch.tensor(data, dtype=torch.int32, device="cuda")
@@ -63,6 +67,7 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
     def begin_forward(
         self,
         seq_exec_metadata_list: List[SequenceExecutionMetadata],
+        duplicate_mapping: Optional[List[Tuple[int, int]]] = None,
     ) -> None:
         # The indptr tensor captures the location query tokens in the input tensor.
         # |<---------------------- num_valid_tokens ----------------------------------------------------->|
@@ -205,6 +210,8 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
             prefill_kv_last_page_len + decode_kv_last_page_len
         )
 
+        self.duplicate_mapping = duplicate_mapping
+
     def end_forward(self):
         if self.contains_prefill:
             self.prefill_wrapper.end_forward()
@@ -213,6 +220,7 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
             self.decode_wrapper.end_forward()
 
         self.is_metadata_initialized = False
+        del self.duplicate_mapping
 
     def forward(
         self,
@@ -246,6 +254,15 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
                 self.append_kv_page_indptr_tensor,
                 self.append_kv_last_page_len_tensor,
                 kv_layout="NHD",
+            )
+
+        # TODO: timer
+        if self.cache_engine.config.cache_config.duplicate_kv_cache:
+            assert layer_id is not None
+            self.swap_blocks(
+                self.cache_engine.gpu_cache[layer_id],
+                self.cache_engine.cpu_cache[layer_id],
+                self.duplicate_mapping
             )
 
         with self.get_timer(OperationMetrics.ATTN_PREFILL, layer_id):

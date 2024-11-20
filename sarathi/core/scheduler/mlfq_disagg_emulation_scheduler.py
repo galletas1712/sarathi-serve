@@ -255,9 +255,10 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                     continue
 
                 blocks_to_swap = min(num_blocks_allocated, num_required_blocks) if self.cache_config.partial_swap_out else num_blocks_allocated
-                total_cpu_blocks_required += blocks_to_swap
-                if total_cpu_blocks_required > self.block_manager.get_num_free_blocks(BlockDevice.CPU):
-                    break
+                if not self.cache_config.duplicate_kv_cache:
+                    total_cpu_blocks_required += blocks_to_swap
+                    if total_cpu_blocks_required > self.block_manager.get_num_free_blocks(BlockDevice.CPU):
+                        break
                 num_required_blocks -= blocks_to_swap
                 running_decodes_to_swap_out.append((decode_seq, blocks_to_swap))
                 j -= 1

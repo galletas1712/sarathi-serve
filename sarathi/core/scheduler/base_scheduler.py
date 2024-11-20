@@ -33,6 +33,7 @@ class BaseScheduler(ABC):
             cache_config.block_size,
             cache_config.num_gpu_blocks,
             cache_config.num_cpu_blocks,
+            cache_config.duplicate_kv_cache,
             model_config.max_model_len,
         )
         self.prompt_limit = model_config.max_model_len

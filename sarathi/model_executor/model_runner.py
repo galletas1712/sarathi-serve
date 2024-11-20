@@ -217,13 +217,16 @@ class ModelRunner:
     def run(
         self,
         seq_exec_metadata_list: List[SequenceExecutionMetadata],
-        gpu_cache: Optional[List[torch.Tensor]] = None,
+        duplicate_mapping: Optional[List[Tuple[int, int]]] = None
     ) -> torch.Tensor:
         # Prepare input tensors.
         with self._prepare_inputs_e2e_timer:
             input_tokens, input_positions = self._prepare_inputs(seq_exec_metadata_list)
+        
+        if self.config.cache_config.duplicate_kv_cache:
+            assert duplicate_mapping is not None and len(duplicate_mapping) == len(seq_exec_metadata_list)
 
-        get_attention_wrapper().begin_forward(seq_exec_metadata_list)
+        get_attention_wrapper().begin_forward(seq_exec_metadata_list, duplicate_mapping)
 
         with self._model_execution_e2e_timer:
             # Execute the model.
@@ -231,7 +234,7 @@ class ModelRunner:
                 output = self.model(
                     hidden_states=input_tokens,
                     positions=input_positions,
-                    kv_caches=gpu_cache,
+                    kv_caches=get_attention_wrapper().cache_engine.gpu_cache,
                 )
             except RuntimeError as e:
                 logger.error(

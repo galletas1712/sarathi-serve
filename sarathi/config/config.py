@@ -173,6 +173,14 @@ class CacheConfig:
         default=False,
         metadata={"help": "Whether to partially swap out prefixes of sequences."},
     )
+    duplicate_kv_cache: bool = field(
+        default=False,
+        metadata={"help": "Duplicate KV cache in host memory of all running requests. Requires num_cpu_blocks > num_gpu_blocks."},
+    )
+
+    def __post_init__(self):
+        if self.duplicate_kv_cache:
+            assert self.num_cpu_blocks > self.num_gpu_blocks, "num_cpu_blocks must be greater than num_gpu_blocks for duplicate_kv_cache=True."
 
 
 @dataclass

@@ -93,6 +93,7 @@ class CacheEngine:
         return finished_swap_in_seq_ids
 
     def swap_out(self, swap_mapping: Dict[str, List[Tuple[int, int]]]) -> None:
+        assert not self.config.cache_config.duplicate_kv_cache
         finish_event = torch.cuda.Event()
         for _, src_to_dst in swap_mapping.items():
             src_to_dst = torch.tensor(src_to_dst, dtype=torch.int64, device="cpu")
