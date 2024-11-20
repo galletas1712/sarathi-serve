@@ -23,6 +23,7 @@ class CacheEngine:
         self,
         config: SystemConfig,
     ) -> None:
+        self.config = config
         self.head_size = config.model_config.get_head_size()
         self.num_layers = config.model_config.get_num_layers(config.parallel_config)
         self.num_heads = config.model_config.get_num_kv_heads(config.parallel_config)

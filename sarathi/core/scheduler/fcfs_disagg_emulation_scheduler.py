@@ -6,6 +6,7 @@ from sarathi.config import (
     ParallelConfig,
 )
 from sarathi.config.config import FCFSDisaggEmulationSchedulerConfig
+from sarathi.core.block_space_manager import BlockDevice
 from sarathi.core.datatypes.sequence import Sequence, SequenceScheduleMetadata
 from sarathi.core.scheduler.disagg_emulation_base_scheduler import DisaggEmulationBaseScheduler
 from sarathi.logger import init_logger
@@ -135,6 +136,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
     def _schedule_decodes(self, running_decodes: List[Sequence], now: float):
         running = []
         swap_out_seq_ids = []
+        swap_out_lens = []
         swap_in_seq_ids = []
         scheduled_seq_id_metadata_list = []
 
@@ -172,14 +174,27 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                     # Preempt the current sequence group.
                     if seq.is_paused():
                         print(f"Iteration {self._iteration_id}: Swapping out {seq.seq_id} because can't run :(")
-                        self._swap_out(seq)
+                        if self.cache_config.partial_swap_out:
+                            num_blocks_to_swap = self.block_manager.get_seq_num_blocks_allocated(seq.seq_id, BlockDevice.GPU)
+                            self._swap_out(seq, num_blocks_to_swap)
+                            swap_out_lens.append(num_blocks_to_swap)
+                        else:
+                            self._swap_out(seq)
                         swap_out_seq_ids.append(seq.seq_id)
                     else:
                         print(f"Iteration {self._iteration_id}: Can't swap in {seq.seq_id} because no space :(")
                         assert seq.is_swapped_out()
                     break
             else:
-                if seq.is_paused():
+                assert seq.is_paused() or seq.is_swapped_out(), f"Sequence {seq.seq_id} is in an invalid state: {seq.get_status()}"
+
+                if seq.is_swapped_out():
+                    print(f"Iteration {self._iteration_id}: Swapping in {seq.seq_id}")
+                    assert self.block_manager.can_swap_in_and_append_slot(seq.seq_id, seq.get_num_logical_blocks())
+                    self._swap_in(seq)
+                    swap_in_seq_ids.append(seq.seq_id)
+
+                if seq.is_paused() or (seq.is_swapped_out() and not self.cache_config.async_swap_in):
                     print(f"Iteration {self._iteration_id}: Scheduling {seq.seq_id}")
                     # Append new slots to the sequence group.
                     self._append_slot(seq)
@@ -188,20 +203,13 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                     scheduled_seq_id_metadata_list.append(
                         SequenceScheduleMetadata.from_sequence(seq)
                     )
-                elif seq.is_swapped_out():
-                    print(f"Iteration {self._iteration_id}: Swapping in {seq.seq_id}")
-                    assert self.block_manager.can_swap_in_and_append_slot(seq.seq_id, seq.get_num_logical_blocks())
-                    self._swap_in(seq)
-                    swap_in_seq_ids.append(seq.seq_id)
-                else:
-                    assert False, f"Sequence {seq.seq_id} is in an invalid state: {seq.get_status()}"
         
         return (
             running,
             [],
             [],
             swap_out_seq_ids,
-            [],
+            swap_out_lens,
             swap_in_seq_ids,
             scheduled_seq_id_metadata_list
         )

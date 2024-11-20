@@ -211,6 +211,9 @@ class BaseWorker:
             self.cache_engine.begin_swap_in(swap_in_mappings)
         else:
             self.cache_engine.swap_in(swap_in_mappings)
+            now = time.perf_counter()
+            for seq_id in swap_in_mappings.keys():
+                self.metrics_store.on_swap_in_end(seq_id, end_timestamp=now)
 
         if seq_exec_metadata_list:
             assert not scheduler_outputs.is_empty()  # Superset

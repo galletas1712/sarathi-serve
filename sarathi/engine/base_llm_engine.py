@@ -378,7 +378,7 @@ class BaseLLMEngine:
         finished_swap_in_seq_ids = self.notify_socket.recv_pyobj()
 
         if finished_swap_in_seq_ids:
-            logger.debug(f"Engine received finished swap in seq ids: {finished_swap_in_seq_ids}")
+            print(f"Engine received finished swap in seq ids: {finished_swap_in_seq_ids}")
 
         self.scheduler.mark_swap_in_finished(finished_swap_in_seq_ids)
         self.seq_manager.mark_swap_in_finished(finished_swap_in_seq_ids)

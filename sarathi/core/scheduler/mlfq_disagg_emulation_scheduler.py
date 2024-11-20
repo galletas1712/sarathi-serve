@@ -254,7 +254,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                     j -= 1
                     continue
 
-                blocks_to_swap = min(num_blocks_allocated, num_required_blocks)
+                blocks_to_swap = min(num_blocks_allocated, num_required_blocks) if self.cache_config.partial_swap_out else num_blocks_allocated
                 total_cpu_blocks_required += blocks_to_swap
                 if total_cpu_blocks_required > self.block_manager.get_num_free_blocks(BlockDevice.CPU):
                     break
@@ -272,12 +272,25 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             # Swap the sequences we promised to swap out
             for seq_to_swap, num_blocks_to_swap in running_decodes_to_swap_out:
                 print(f"Iteration {self._iteration_id}: Swapping out {num_blocks_to_swap} blocks in sequence {seq_to_swap.seq_id}")
-                self._swap_out(seq_to_swap, num_blocks_to_swap)
+                if self.cache_config.partial_swap_out:
+                    self._swap_out(seq_to_swap, num_blocks_to_swap)
+                    swap_out_lens.append(num_blocks_to_swap)
+                else:
+                    self._swap_out(seq_to_swap)
                 swap_out_seq_ids.append(seq_to_swap.seq_id)
-                swap_out_lens.append(num_blocks_to_swap)
+            
+            assert seq.is_paused() or seq.is_swapped_out(), f"Sequence {seq.seq_id} is in an invalid state: {seq.get_status()}"
 
-            # Schedule the current sequence
-            if seq.is_paused():
+            if seq.is_swapped_out():
+                print(f"Iteration {self._iteration_id}: Swapping in {seq.seq_id}")
+                assert self.block_manager.can_swap_in_and_append_slot(
+                    seq.seq_id,
+                    seq.get_num_logical_blocks()
+                )
+                self._swap_in(seq)
+                swap_in_seq_ids.append(seq.seq_id)
+            
+            if seq.is_paused() or (seq.is_swapped_out() and not self.cache_config.async_swap_in):
                 print(f"Iteration {self._iteration_id}: Scheduling {seq.seq_id}")
                 # Append new slots to the sequence group.
                 self._append_slot(seq)
@@ -287,16 +300,6 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                     SequenceScheduleMetadata.from_sequence(seq)
                 )
                 self.last_iteration_ran[seq.seq_id] = self._iteration_id
-            elif seq.is_swapped_out():
-                print(f"Iteration {self._iteration_id}: Swapping in {seq.seq_id}")
-                assert self.block_manager.can_swap_in_and_append_slot(
-                    seq.seq_id,
-                    seq.get_num_logical_blocks()
-                )
-                self._swap_in(seq)
-                swap_in_seq_ids.append(seq.seq_id)
-            else:
-                assert False, f"Sequence {seq.seq_id} is in an invalid state: {seq.get_status()}"
             
             i += 1
 

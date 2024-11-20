@@ -50,6 +50,7 @@ class BaseScheduler(ABC):
         self.swapping_in: Dict[str, Sequence] = {}
         self.swapped_in: Dict[str, Sequence] = {}
         # NOTE: We have a separate self.swapped_in queue because the scheduler needds to decide where to put recently swapped in sequences in the running list
+        # NOTE: This is *ONLY* used when there are async swap ins.
 
     def reset_state(self) -> None:
         self._iteration_id = -1
@@ -146,10 +147,14 @@ class BaseScheduler(ABC):
         self.block_manager.finish_swap_in(seq.seq_id)
     
     def _swap_in(self, seq: Sequence):
-        self._begin_swap_in(seq)
-        if not self.cache_config.async_swap_in:
-            self._finish_swap_in(seq)
-        seq.check_transition(SequenceStatus.RUNNING)  # NOTE: If we synchronously swap in, we can run the sequence immediately
+        # TODO: state transition check
+        if self.cache_config.async_swap_in:
+            self._begin_swap_in(seq)
+        else:
+            seq.check_transition(SequenceStatus.PAUSED)
+            del self.swapped_out[seq.seq_id]
+            # NOTE: No adding to swapped_in!
+            self.block_manager.swap_in(seq.seq_id)
 
     def _swap_out(self, seq: Sequence, num_blocks_to_swap: Optional[int] = None) -> None:
         seq.check_transition(SequenceStatus.SWAPPED_OUT)

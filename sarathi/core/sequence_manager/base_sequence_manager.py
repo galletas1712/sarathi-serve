@@ -45,7 +45,7 @@ class BaseSequenceManager(ABC):
         self.seq_map[seq_id].set_status(SequenceStatus.PAUSED)
     
     def _swap_in_seq(self, seq_id: str) -> None:
-        self.seq_map[seq_id].set_status(SequenceStatus.RUNNING)
+        self.seq_map[seq_id].set_status(SequenceStatus.PAUSED)
 
     def _pause_seq(self, seq_id: str) -> None:
         self.seq_map[seq_id].set_status(SequenceStatus.PAUSED)
@@ -127,25 +127,29 @@ class BaseSequenceManager(ABC):
     ) -> List[str]:
         finished_seq_ids = []
 
+        assert len(scheduler_outputs.scheduled_seq_id_metadata_list) == len(sampler_outputs)
         for seq_id_metadata, sampler_output in zip(
             scheduler_outputs.scheduled_seq_id_metadata_list, sampler_outputs
         ):
             seq_id = seq_id_metadata.seq_id
             assert seq_id == sampler_output.seq_id
             seq = self.seq_map[seq_id]
-            if seq.is_waiting() or seq.is_swapped_out():
-                # seq is preempted
-                # this can happen with pipeline parallel -- if the system
-                # runs out of memory, it will preempt the last arrived request
-                # this request might still be executing when the next stage scheduling
-                # triggers the preemption
-                continue
+
+            assert seq.is_running()
+            # if seq.is_waiting() or seq.is_swapped_out():
+            #     # seq is preempted
+            #     # this can happen with pipeline parallel -- if the system
+            #     # runs out of memory, it will preempt the last arrived request
+            #     # this request might still be executing when the next stage scheduling
+            #     # triggers the preemption
+            #     continue
 
             if not seq.is_prompt_processing_finished():
                 seq.update_prompt_tokens_processed(
                     seq_id_metadata.prompt_chunk_len
                 )
 
+            print(f"Pausing {seq_id} with state {seq.get_status()}")
             self._pause_seq(seq_id)
 
             finished = self._process_seq_output(

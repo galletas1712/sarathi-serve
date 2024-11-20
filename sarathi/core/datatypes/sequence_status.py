@@ -34,7 +34,8 @@ class SequenceStatus(enum.Enum):
             ],
             SequenceStatus.SWAPPED_OUT: [
                 SequenceStatus.SWAPPED_OUT,  # NOTE: We can keep on evicting more tokens from a request
-                SequenceStatus.SWAPPING_IN,
+                SequenceStatus.SWAPPING_IN, # NOTE: For async swap ins
+                SequenceStatus.PAUSED,  # NOTE: For synchronous swap ins
             ],
             SequenceStatus.SWAPPING_IN: [
                 SequenceStatus.PAUSED,

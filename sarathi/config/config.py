@@ -169,6 +169,10 @@ class CacheConfig:
         default=False,
         metadata={"help": "Whether to asynchronously swap in sequences."},
     )
+    partial_swap_out: bool = field(
+        default=False,
+        metadata={"help": "Whether to partially swap out prefixes of sequences."},
+    )
 
 
 @dataclass
