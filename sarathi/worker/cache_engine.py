@@ -4,9 +4,9 @@ from typing import Dict, List, Tuple, Union
 
 import torch
 
-from sarathi.config import ModelConfig, ParallelConfig, SystemConfig
+from sarathi.config import ModelConfig, ParallelConfig, CacheConfig
 from sarathi.logger import init_logger
-from sarathi.model_executor.attention import get_attention_wrapper
+from sarathi.cache_ops import swap_blocks
 
 logger = init_logger(__name__)
 
@@ -21,17 +21,18 @@ class CacheEngine:
 
     def __init__(
         self,
-        config: SystemConfig,
+        model_config: ModelConfig,
+        parallel_config: ParallelConfig,
+        cache_config: CacheConfig,
     ) -> None:
-        self.config = config
-        self.head_size = config.model_config.get_head_size()
-        self.num_layers = config.model_config.get_num_layers(config.parallel_config)
-        self.num_heads = config.model_config.get_num_kv_heads(config.parallel_config)
-        self.dtype = config.model_config.dtype
+        self.head_size = model_config.get_head_size()
+        self.num_layers = model_config.get_num_layers(parallel_config)
+        self.num_heads = model_config.get_num_kv_heads(parallel_config)
+        self.dtype = model_config.dtype
 
-        self.block_size = config.cache_config.block_size
-        self.num_gpu_blocks = config.cache_config.num_gpu_blocks
-        self.num_cpu_blocks = config.cache_config.num_cpu_blocks
+        self.block_size = cache_config.block_size
+        self.num_gpu_blocks = cache_config.num_gpu_blocks
+        self.num_cpu_blocks = cache_config.num_cpu_blocks
 
         assert self.num_gpu_blocks is not None
         assert self.num_cpu_blocks is not None
@@ -52,7 +53,7 @@ class CacheEngine:
         kv_cache: List[torch.Tensor] = []
         for _ in range(self.num_layers):
             kv_cache.append(
-                get_attention_wrapper().get_cache_block(
+                self._get_cache_block(
                     num_blocks,
                     dtype=self.dtype,
                     pin_memory=(device == "cpu"),
@@ -66,8 +67,7 @@ class CacheEngine:
                 src_to_dst = torch.tensor(src_to_dst, dtype=torch.int64, device="cpu")
                 finish_event = torch.cuda.Event()
                 for i in range(self.num_layers):
-                    get_attention_wrapper().swap_blocks(self.cpu_cache[i], self.gpu_cache[i],
-                                                src_to_dst)
+                    swap_blocks(self.cpu_cache[i], self.gpu_cache[i], src_to_dst)
                 finish_event.record()
                 self.finish_swap_in_events[seq_id] = finish_event
     
@@ -98,11 +98,20 @@ class CacheEngine:
         for _, src_to_dst in swap_mapping.items():
             src_to_dst = torch.tensor(src_to_dst, dtype=torch.int64, device="cpu")
             for i in range(self.num_layers):
-                get_attention_wrapper().swap_blocks(self.gpu_cache[i], self.cpu_cache[i],
-                                            src_to_dst)
+                swap_blocks(self.gpu_cache[i], self.cpu_cache[i], src_to_dst)
         finish_event.record()
         finish_event.synchronize()
         
+    def _get_cache_block(self, num_blocks: int, **kwargs) -> torch.Tensor:
+        return torch.empty(
+            num_blocks,
+            2,
+            self.block_size,
+            self.num_heads,
+            self.head_size,
+            **kwargs,
+        )
+
     @staticmethod
     def get_cache_block_size(
         block_size: int,
@@ -118,7 +127,7 @@ class CacheEngine:
         total = num_layers * (key_cache_block + value_cache_block)
         dtype_size = _get_dtype_size(model_config.dtype)
         return dtype_size * total
-
+    
 
 def _get_dtype_size(dtype: torch.dtype) -> int:
     return torch.tensor([], dtype=dtype).element_size()

@@ -7,7 +7,7 @@ from sarathi.config import ModelConfig, ParallelConfig
 from sarathi.core.datatypes.sequence import SequenceExecutionMetadata
 from sarathi.metrics.constants import OperationMetrics
 from sarathi.model_executor.attention.base_attention_wrapper import BaseAttentionWrapper
-from sarathi.worker.cache_engine import CacheEngine
+from sarathi.cache_ops import swap_blocks
 
 
 class FlashinferAttentionWrapper(BaseAttentionWrapper):
@@ -48,22 +48,9 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
         self.append_kv_page_indptr_tensor = None
         self.append_kv_last_page_len_tensor = None
     
-    def attach_cache_engine(self, cache_engine: CacheEngine) -> None:
-        self.cache_engine = cache_engine
-
     def to_int_tensor(self, data: List[int]) -> torch.Tensor:
         return torch.tensor(data, dtype=torch.int32, device="cuda")
 
-    def get_cache_block(self, num_blocks: int, **kwargs) -> torch.Tensor:
-        return torch.empty(
-            num_blocks,
-            2,
-            self.block_size,
-            self.num_kv_heads,
-            self.head_dim,
-            **kwargs,
-        )
-    
     def begin_forward(
         self,
         seq_exec_metadata_list: List[SequenceExecutionMetadata],
@@ -259,7 +246,7 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
         # TODO: timer
         if self.cache_engine.config.cache_config.duplicate_kv_cache:
             assert layer_id is not None
-            self.swap_blocks(
+            swap_blocks(
                 self.cache_engine.gpu_cache[layer_id],
                 self.cache_engine.cpu_cache[layer_id],
                 self.duplicate_mapping

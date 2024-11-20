@@ -3,11 +3,12 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 
-from sarathi.config import ModelConfig, ParallelConfig
+from sarathi.config import ModelConfig, ParallelConfig, CacheConfig
 from sarathi.core.datatypes.sequence import SequenceExecutionMetadata
 from sarathi.metrics.constants import OperationMetrics
 from sarathi.metrics.cuda_timer import CudaTimer
 from sarathi.cache_ops import swap_blocks
+from sarathi.worker.cache_engine import CacheEngine
 
 
 class BaseAttentionWrapper(ABC):
@@ -20,6 +21,9 @@ class BaseAttentionWrapper(ABC):
         block_size: int,
         device: torch.device,
     ):
+        self.model_config = model_config
+        self.parallel_config = parallel_config
+
         self.device = device
         self.num_q_heads = model_config.get_num_q_heads(parallel_config)
         self.num_kv_heads = model_config.get_num_kv_heads(parallel_config)
@@ -39,8 +43,12 @@ class BaseAttentionWrapper(ABC):
             self._timers[(operation, layer_id)] = CudaTimer(operation, layer_id)
         return self._timers.get((operation, layer_id))
 
-    def swap_blocks(self, src: torch.Tensor, dst: torch.Tensor, src_to_dst: torch.Tensor) -> None:
-        swap_blocks(src, dst, src_to_dst)
+    def init_cache_engine(self, cache_config: CacheConfig) -> None:
+        self.cache_engine = CacheEngine(
+            self.model_config,
+            self.parallel_config,
+            cache_config
+        )
 
     @abstractmethod
     def begin_forward(

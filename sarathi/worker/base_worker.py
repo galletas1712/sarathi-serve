@@ -57,10 +57,6 @@ class BaseWorker:
         self.rank = rank
         self.comm_info = comm_info
 
-        # Uninitialized cache engine. Will be initialized by
-        # self.init_cache_engine().
-        self.cache_engine = None
-
         # Sequence manager also needs number of blocks for initialization
         self.seq_manager = None
 
@@ -153,15 +149,11 @@ class BaseWorker:
 
         self.config.cache_config = cache_config
 
-        self.cache_engine = CacheEngine(
-            self.config,
-        )
+        get_attention_wrapper().init_cache_engine(cache_config)
 
         self.seq_manager = WorkerSequenceManager(
             self.config,
         )
-
-        get_attention_wrapper().attach_cache_engine(self.cache_engine)
 
         self.execution_thread.start()
 
@@ -204,7 +196,7 @@ class BaseWorker:
         # This will wait for swap outs to finish
         if not self.config.cache_config.duplicate_kv_cache:
             # NOTE: We don't actually perform the cache swap out operation, since it's already all stored in host memory
-            self.cache_engine.swap_out(swap_out_mappings)
+            get_attention_wrapper().cache_engine.swap_out(swap_out_mappings)
 
         # Perform async swap in after sync swap out
         now = time.perf_counter()
@@ -212,9 +204,9 @@ class BaseWorker:
             self.metrics_store.on_swap_in_start(seq_id, start_timestamp=now)
 
         if self.config.cache_config.async_swap_in:
-            self.cache_engine.begin_swap_in(swap_in_mappings)
+            get_attention_wrapper().cache_engine.begin_swap_in(swap_in_mappings)
         else:
-            self.cache_engine.swap_in(swap_in_mappings)
+            get_attention_wrapper().cache_engine.swap_in(swap_in_mappings)
             now = time.perf_counter()
             for seq_id in swap_in_mappings.keys():
                 self.metrics_store.on_swap_in_end(seq_id, end_timestamp=now)
@@ -254,7 +246,7 @@ class BaseWorker:
 
         while True:
             logger.debug(f"Iteration: {self.curr_batch_id}")
-            finished_swap_in_seq_ids = self.cache_engine.pop_finished_swap_ins()
+            finished_swap_in_seq_ids = get_attention_wrapper().cache_engine.pop_finished_swap_ins()
 
             now = time.perf_counter()
             for seq_id in finished_swap_in_seq_ids:
