@@ -197,7 +197,8 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
             prefill_kv_last_page_len + decode_kv_last_page_len
         )
 
-        self.duplicate_mapping = duplicate_mapping
+        if duplicate_mapping:
+            self.duplicate_mapping = torch.tensor(duplicate_mapping, dtype=torch.long, device="cpu")
 
     def end_forward(self):
         if self.contains_prefill:
@@ -207,7 +208,9 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
             self.decode_wrapper.end_forward()
 
         self.is_metadata_initialized = False
-        del self.duplicate_mapping
+
+        if hasattr(self, "duplicate_mapping"):
+            del self.duplicate_mapping
 
     def forward(
         self,
@@ -244,8 +247,9 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
             )
 
         # TODO: timer
-        if self.cache_engine.config.cache_config.duplicate_kv_cache:
+        if self.cache_engine.duplicate_kv_cache:
             assert layer_id is not None
+            assert hasattr(self, "duplicate_mapping") and self.duplicate_mapping is not None
             swap_blocks(
                 self.cache_engine.gpu_cache[layer_id],
                 self.cache_engine.cpu_cache[layer_id],

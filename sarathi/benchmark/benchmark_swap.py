@@ -6,7 +6,7 @@ import random
 
 from sarathi.benchmark.config import BenchmarkConfig
 from sarathi.config.config import BaseEndpointConfig, ReplicaConfig
-from sarathi.worker.cache_engine import CacheEngine
+from sarathi.model_executor.attention.cache_engine import CacheEngine
 from sarathi.model_executor.attention import set_attention_backend, get_attention_wrapper
 
 

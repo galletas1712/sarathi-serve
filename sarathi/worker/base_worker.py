@@ -11,6 +11,7 @@ import torch.distributed
 import zmq
 
 from sarathi.config import CacheConfig, ParallelConfig, SystemConfig
+from sarathi.core.block_space_manager import BlockDevice
 from sarathi.core.datatypes.comm_info import CommInfo
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
 from sarathi.core.datatypes.sequence import SamplerOutputs
@@ -26,7 +27,6 @@ from sarathi.model_executor.parallel_utils.parallel_state import (
     initialize_model_parallel,
 )
 from sarathi.utils.threading_utils import exit_on_error, synchronized
-from sarathi.worker.cache_engine import CacheEngine
 from sarathi.config import DisaggEmulationSchedulerConfig
 
 logger = init_logger(__name__)
@@ -185,20 +185,27 @@ class BaseWorker:
         )
 
         # NOTE: Ordering of which ones are swapped out first
-        swap_out_mappings = self.seq_manager.get_swap_out_mappings(scheduler_outputs.swap_out_seq_ids)
-        swap_in_mappings = self.seq_manager.get_swap_in_mappings(scheduler_outputs.swap_in_seq_ids)
-
         # Perform sync swap out
-        now = time.perf_counter()
-        for seq_id, mapping in swap_out_mappings.items():
-            self.metrics_store.on_swap_out_start(seq_id, len(mapping), start_timestamp=now)
-
         # This will wait for swap outs to finish
         if not self.config.cache_config.duplicate_kv_cache:
             # NOTE: We don't actually perform the cache swap out operation, since it's already all stored in host memory
+            swap_out_mappings = self.seq_manager.get_swap_out_mappings(scheduler_outputs.swap_out_seq_ids)
+            now = time.perf_counter()
+            for i, (seq_id, mapping) in enumerate(swap_out_mappings.items()):
+                assert not scheduler_outputs.swap_out_lens or len(mapping) == scheduler_outputs.swap_out_lens[i]
+                self.metrics_store.on_swap_out_start(seq_id, len(mapping), start_timestamp=now)
             get_attention_wrapper().cache_engine.swap_out(swap_out_mappings)
-
+        else:
+            now = time.perf_counter()
+            for i, seq_id in enumerate(scheduler_outputs.swap_out_seq_ids):
+                if scheduler_outputs.swap_out_lens:
+                    num_blocks = scheduler_outputs.swap_out_lens[i]
+                else:
+                    num_blocks = self.seq_manager.block_manager.get_seq_num_blocks_allocated(seq_id, BlockDevice.GPU)
+                self.metrics_store.on_swap_out_start(seq_id, num_blocks, start_timestamp=now)
+        
         # Perform async swap in after sync swap out
+        swap_in_mappings = self.seq_manager.get_swap_in_mappings(scheduler_outputs.swap_in_seq_ids)
         now = time.perf_counter()
         for seq_id in swap_in_mappings.keys():
             self.metrics_store.on_swap_in_start(seq_id, start_timestamp=now)
@@ -215,10 +222,12 @@ class BaseWorker:
             assert not scheduler_outputs.is_empty()  # Superset
             # print(f"Iteration: {self.curr_batch_id}, executing model!")
             # NOTE: Under KV cache duplication, model_runner is responsible for pipelining KV cache out to swap
+            scheduled_seqs = [seq_exec_metadata.seq for seq_exec_metadata in seq_exec_metadata_list]
+            seq_num_tokens = [seq_exec_metadata.num_tokens for seq_exec_metadata in seq_exec_metadata_list]
             sampler_outputs = self.model_runner.run(
                 seq_exec_metadata_list,
-                decode_mapping=(
-                    self.seq_manager.block_manager.get_duplicate_mapping([seq.seq_id for seq in seq_exec_metadata_list])
+                duplicate_mapping=(
+                    self.seq_manager.block_manager.get_duplicate_mapping(scheduled_seqs, seq_num_tokens)
                     if self.config.cache_config.duplicate_kv_cache
                     else None
                 )

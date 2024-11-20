@@ -14,7 +14,7 @@ from sarathi.model_executor.attention import get_attention_wrapper
 from sarathi.model_executor.layers.sampler import Sampler
 from sarathi.model_executor.utils import pad_to_alignment, set_random_seed
 from sarathi.utils import get_gpu_memory
-from sarathi.worker.cache_engine import CacheEngine
+from sarathi.model_executor.attention.cache_engine import CacheEngine
 
 logger = init_logger(__name__)
 
@@ -224,7 +224,7 @@ class ModelRunner:
             input_tokens, input_positions = self._prepare_inputs(seq_exec_metadata_list)
         
         if self.config.cache_config.duplicate_kv_cache:
-            assert duplicate_mapping is not None and len(duplicate_mapping) == len(seq_exec_metadata_list)
+            assert duplicate_mapping is not None
 
         get_attention_wrapper().begin_forward(seq_exec_metadata_list, duplicate_mapping)
 

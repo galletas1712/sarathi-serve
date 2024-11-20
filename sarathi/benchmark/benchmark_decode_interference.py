@@ -13,7 +13,7 @@ from sarathi.core.datatypes.sampling_params import SamplingParams
 from sarathi.core.datatypes.sequence import Sequence, SequenceExecutionMetadata
 from sarathi.engine.llm_engine import BaseLLMEngine
 from sarathi.metrics.metrics_store import MetricsStore
-from sarathi.worker.cache_engine import CacheEngine
+from sarathi.model_executor.attention.cache_engine import CacheEngine
 from sarathi.config.config import BaseEndpointConfig, ReplicaConfig, RollingPreemptionProfilingSchedulerConfig
 from sarathi.model_executor.attention import get_attention_wrapper, set_attention_backend
 from sarathi.model_executor.parallel_utils.parallel_state import initialize_model_parallel

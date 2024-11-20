@@ -33,6 +33,7 @@ class CacheEngine:
         self.block_size = cache_config.block_size
         self.num_gpu_blocks = cache_config.num_gpu_blocks
         self.num_cpu_blocks = cache_config.num_cpu_blocks
+        self.duplicate_kv_cache = cache_config.duplicate_kv_cache
 
         assert self.num_gpu_blocks is not None
         assert self.num_cpu_blocks is not None
@@ -93,7 +94,7 @@ class CacheEngine:
         return finished_swap_in_seq_ids
 
     def swap_out(self, swap_mapping: Dict[str, List[Tuple[int, int]]]) -> None:
-        assert not self.config.cache_config.duplicate_kv_cache
+        assert not self.duplicate_kv_cache
         finish_event = torch.cuda.Event()
         for _, src_to_dst in swap_mapping.items():
             src_to_dst = torch.tensor(src_to_dst, dtype=torch.int64, device="cpu")

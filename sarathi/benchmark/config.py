@@ -177,7 +177,7 @@ class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
         default_factory=PoissonRequestIntervalGeneratorConfig
     )
     num_requests: int = field(
-        default=64, metadata={"help": "Number of requests to generate."}
+        default=256, metadata={"help": "Number of requests to generate."}
     )
     duration: float = field(
         default=None, metadata={"help": "Duration of the synthetic request generation."}
