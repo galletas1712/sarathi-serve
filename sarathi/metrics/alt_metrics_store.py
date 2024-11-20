@@ -94,6 +94,9 @@ class SequenceMetrics:
     TBTs: List[float]
     arrival_to_scheduled_delay: Optional[float]
 
+    num_prompt_tokens: int
+    num_output_tokens: int
+
     is_prefill: bool
     last_prefill_batch_id: Optional[int]
     prefill_done_to_first_decode_delay: Optional[float]
@@ -108,6 +111,9 @@ class SequenceMetrics:
         self.swap_intervals: List[SwapInterval] = []
         self.batch_ids_scheduled: List[int] = []
         self.TBTs: List[float] = []
+
+        self.num_prompt_tokens = 0
+        self.num_output_tokens = 0
 
         self.is_prefill = True
         self.last_prefill_batch_id = None
@@ -156,11 +162,13 @@ class SequenceMetrics:
         self.swap_intervals.append(self._curr_swap_interval)
         self._curr_swap_interval = None
 
-    def schedule(self, batch_id: int, scheduled_timestamp: float):
+    def schedule(self, batch_id: int, scheduled_timestamp: float, num_prompt_tokens: int, num_output_tokens: int):
         if not self.batch_ids_scheduled:
             assert self.total_offset == self.next_tbt_offset
             self.arrival_to_scheduled_delay = scheduled_timestamp - self.arrival_timestamp - self.total_offset
         self.batch_ids_scheduled.append(batch_id)
+        self.num_prompt_tokens += num_prompt_tokens
+        self.num_output_tokens += num_output_tokens
 
     def get_swap_durations(self) -> List[float]:
         """Get list of complete swap durations."""
@@ -249,7 +257,12 @@ class WorkerMetricsStore:
         # print("Sequences", [seq_exec_metadata.seq.seq_id for seq_exec_metadata in seq_exec_metadata_list])
         # Sequence-level metrics
         for seq_exec_metadata in seq_exec_metadata_list:
-            self.sequence_metrics[seq_exec_metadata.seq.seq_id].schedule(batch_id, scheduled_timestamp)
+            self.sequence_metrics[seq_exec_metadata.seq.seq_id].schedule(
+                batch_id,
+                scheduled_timestamp,
+                seq_exec_metadata.num_prompt_tokens,
+                seq_exec_metadata.num_output_tokens
+            )
     
     def on_batch_end(self, batch_id: int, finished_seq_ids: List[str]):
         if not self.initial_memory_profiling_done:
@@ -355,7 +368,9 @@ class WorkerMetricsStore:
     def process_metrics(self) -> Dict[str, Any]:
         metrics = {
             "benchmark_metrics": {},
-            "sequence_metrics": {}
+            "sequence_metrics": {},
+            "sequence_metrics_raw": {},
+            "benchmark_metrics_raw": {}
         }
 
         # Collect all TBTs and scheduling delays
@@ -368,6 +383,8 @@ class WorkerMetricsStore:
 
         # Calculate benchmark-wide metrics
         benchmark_metrics = metrics["benchmark_metrics"]
+        benchmark_metrics_raw = metrics["benchmark_metrics_raw"]
+
         benchmark_metrics["qps"] = len(self.sequence_metrics) / (
             self.batch_metrics[-1].end_timestamp - self.batch_metrics[0].start_timestamp
         )
@@ -385,12 +402,19 @@ class WorkerMetricsStore:
         benchmark_metrics["arrival_to_scheduled_delay"] = calculate_percentile_values(all_arrival_to_scheduled_delays)
 
         benchmark_metrics["engine_scheduler_latency"] = calculate_percentile_values(self.engine_scheduler_latencies)
+        benchmark_metrics_raw["engine_scheduler_latency"] = self.engine_scheduler_latencies
 
         # Calculate per-sequence metrics
         sequence_metrics = metrics["sequence_metrics"]
+        sequence_metrics_raw = metrics["sequence_metrics_raw"]
         for seq_id, seq_metrics in self.sequence_metrics.items():
             sequence_metrics[seq_id] = {}
+            sequence_metrics_raw[seq_id] = {}
             seq_dict = sequence_metrics[seq_id]
+
+            # Token counts
+            seq_dict["num_prompt_tokens"] = seq_metrics.num_prompt_tokens
+            seq_dict["num_output_tokens"] = seq_metrics.num_output_tokens
 
             # Batch counts
             seq_dict["num_batches"] = len(seq_metrics.batch_ids_scheduled)
@@ -422,6 +446,7 @@ class WorkerMetricsStore:
             
             # TBT percentiles
             seq_dict["tbt"] = calculate_percentile_values(seq_metrics.TBTs)
+            sequence_metrics_raw[seq_id]["tbt"] = seq_metrics.TBTs
 
             # Swap metrics
             seq_dict["num_swaps"] = len(seq_metrics.swap_intervals)
@@ -430,12 +455,14 @@ class WorkerMetricsStore:
             # Swap duration percentiles
             swap_durations = seq_metrics.get_swap_durations()
             seq_dict["swap_duration"] = calculate_percentile_values(swap_durations)
+            sequence_metrics_raw[seq_id]["swap_duration"] = swap_durations
 
             # Swap batch duration percentiles
             swap_duration_num_batches = seq_metrics.get_swap_batch_durations()
             seq_dict["swap_duration_num_batches"] = calculate_percentile_values(swap_duration_num_batches)
+            sequence_metrics_raw[seq_id]["swap_duration_num_batches"] = swap_duration_num_batches
         
-        benchmark_metrics["e2e_time"] = calculate_percentile_values([
+        benchmark_metrics["end_to_end_time"] = calculate_percentile_values([
             seq_metrics["end_to_end_time"] for seq_metrics in sequence_metrics.values()
         ])
 

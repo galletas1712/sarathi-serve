@@ -270,11 +270,9 @@ class FCFSDisaggEmulationSchedulerConfig(DisaggEmulationSchedulerConfig):
 
 @dataclass
 class MLFQDisaggEmulationSchedulerConfig(DisaggEmulationSchedulerConfig):
-    quantums: List[int] = field(
-        default_factory=lambda: [128, 256, 512, 1024],
-    )
+    quantums: Optional[int] = None
 
-    starvation_limit: Optional[int] = 512
+    starvation_limit: int = 64
 
     def get_quantums(self):
         return self.quantums
@@ -282,6 +280,9 @@ class MLFQDisaggEmulationSchedulerConfig(DisaggEmulationSchedulerConfig):
     @staticmethod
     def get_type():
         return SchedulerType.MLFQ_DISAGG_EMULATION
+    
+    def __post_init__(self):
+        self.quantums = [self.starvation_limit // 4, self.starvation_limit // 2, self.starvation_limit]
 
 
 @dataclass
