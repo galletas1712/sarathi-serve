@@ -7,7 +7,7 @@ from sarathi.config.base_poly_config import BasePolyConfig
 from sarathi.config.flat_dataclass import create_flat_dataclass
 from sarathi.logger import init_logger
 from sarathi.utils.transformers.config import get_config
-from sarathi.types import AttentionBackend, ResourceMapping, SchedulerType
+from sarathi.config_types import AttentionBackend, ResourceMapping, SchedulerType
 from sarathi.utils.hf_utils import get_and_verify_dtype, get_and_verify_max_len
 
 logger = init_logger(__name__)

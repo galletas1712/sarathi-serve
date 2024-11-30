@@ -6,7 +6,7 @@ import torch
 
 from sarathi.config import ModelConfig, ParallelConfig, CacheConfig
 from sarathi.logger import init_logger
-from sarathi.cache_ops import swap_blocks
+from sarathi_kernels.cache_ops import swap_blocks
 
 logger = init_logger(__name__)
 

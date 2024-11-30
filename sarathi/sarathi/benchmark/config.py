@@ -6,7 +6,7 @@ from sarathi.config import BaseEndpointConfig
 from sarathi.config.base_poly_config import BasePolyConfig
 from sarathi.config.flat_dataclass import create_flat_dataclass
 from sarathi.logger import init_logger
-from sarathi.types import (
+from sarathi.config_types import (
     ReplicaResourceMapping,
     RequestGeneratorType,
     RequestIntervalGeneratorType,

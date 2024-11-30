@@ -14,7 +14,7 @@ from sarathi.benchmark.request_generator import RequestGeneratorRegistry
 from sarathi.benchmark.utils.random import set_seeds
 from sarathi.config import ReplicaConfig
 from sarathi.metrics.metrics_store import MetricsStore
-from sarathi.types import ReplicaResourceMapping, ResourceMapping
+from sarathi.config_types import ReplicaResourceMapping, ResourceMapping
 from sarathi.utils import get_ip
 
 logger = logging.getLogger(__name__)

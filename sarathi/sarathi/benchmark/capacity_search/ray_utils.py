@@ -4,7 +4,7 @@ from typing import Optional
 
 import ray
 
-from sarathi.types import ReplicaResourceMapping
+from sarathi.config_types import ReplicaResourceMapping
 
 
 def get_ip() -> str:

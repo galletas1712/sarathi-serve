@@ -7,7 +7,7 @@ from sarathi.config import ModelConfig, ParallelConfig
 from sarathi.core.datatypes.sequence import SequenceExecutionMetadata
 from sarathi.metrics.constants import OperationMetrics
 from sarathi.model_executor.attention.base_attention_wrapper import BaseAttentionWrapper
-from sarathi.cache_ops import swap_blocks
+from sarathi_kernels.cache_ops import swap_blocks
 
 
 class FlashinferAttentionWrapper(BaseAttentionWrapper):

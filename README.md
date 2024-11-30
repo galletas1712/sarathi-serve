@@ -1,3 +1,9 @@
+```
+uv sync
+uv sync --extra compile
+uv build --package sarathi
+```
+
 # Sarathi-Serve
 
 Sarathi-Serve is a high througput and low-latency LLM serving framework. Please refer to our [OSDI'24 paper](https://www.usenix.org/conference/osdi24/presentation/agrawal) for more details. 

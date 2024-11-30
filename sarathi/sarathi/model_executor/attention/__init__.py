@@ -7,7 +7,7 @@ from sarathi.model_executor.attention.flashinfer_attention_wrapper import (
 from sarathi.model_executor.attention.no_op_attention_wrapper import (
     NoOpAttentionWrapper,
 )
-from sarathi.types import AttentionBackend
+from sarathi.config_types import AttentionBackend
 
 ATTENTION_BACKEND = AttentionBackend.NO_OP
 

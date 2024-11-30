@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 
-from sarathi import activation_ops
+from sarathi_kernels import activation_ops
 
 
 class SiluAndMul(nn.Module):

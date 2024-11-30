@@ -5,7 +5,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from sarathi import layernorm_ops
+from sarathi_kernels import layernorm_ops
 from sarathi.metrics.cuda_timer import CudaTimer
 
 

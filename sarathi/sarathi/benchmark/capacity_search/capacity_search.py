@@ -12,7 +12,7 @@ import wandb
 from sarathi.benchmark.capacity_search.config import BenchmarkConfig, JobConfig
 from sarathi.benchmark.capacity_search.ray_utils import ResourceManager, get_ip
 from sarathi.logger import init_logger
-from sarathi.types import ReplicaResourceMapping
+from sarathi.config_types import ReplicaResourceMapping
 
 logger = init_logger(__name__)
 

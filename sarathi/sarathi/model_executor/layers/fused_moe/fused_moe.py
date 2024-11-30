@@ -9,7 +9,7 @@ import torch
 import triton
 import triton.language as tl
 
-from sarathi import activation_ops, moe_ops
+from sarathi_kernels import activation_ops, moe_ops
 
 
 @triton.jit

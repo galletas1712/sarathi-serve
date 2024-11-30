@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "sarathi",
     "fastapi>=0.115.5",
     "flashinfer>=0.1.6",
     "grpcio>=1.68.0",
@@ -18,6 +19,8 @@ dependencies = [
     "tqdm>=4.67.1",
     "transformers>=4.46.3",
     "uvicorn>=0.32.1",
+    "plotly-express>=0.4.1",
+    "ddsketch>=3.0.1",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +46,7 @@ url = "https://flashinfer.ai/whl/cu124/torch2.4/"
 explicit = true
 
 [tool.uv.sources]
+sarathi = { workspace = true }
 sarathi_kernels = { path = "sarathi_kernels" }
 torch = [
   { index = "pytorch-cu124" },
@@ -53,3 +57,7 @@ flashinfer = [
 
 [tool.uv]
 no-build-isolation-package = ["sarathi_kernels"]
+
+[tool.uv.workspace]
+members = ["sarathi"]
+exclude = ["sarathi_kernels"]

@@ -28,7 +28,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 import torch
 import torch.nn as nn
 
-from sarathi import pos_encoding_ops
+from sarathi_kernels import pos_encoding_ops
 
 
 class RotaryEmbedding(nn.Module):
