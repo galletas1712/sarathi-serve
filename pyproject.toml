@@ -1,14 +1,55 @@
-[build-system]
-requires = [
-    "ninja",
-    "packaging",
-    "setuptools",
-    "torch == 2.3",
-    "wheel",
+[project]
+name = "sarathi-serve"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.5",
+    "flashinfer>=0.1.6",
+    "grpcio>=1.68.0",
+    "openai>=1.55.3",
+    "psutil>=6.1.0",
+    "pyarrow>=18.1.0",
+    "pyyaml>=6.0.2",
+    "ray>=2.39.0",
+    "sentencepiece>=0.2.0",
+    "torch>=2.4",
+    "tqdm>=4.67.1",
+    "transformers>=4.46.3",
+    "uvicorn>=0.32.1",
 ]
-build-backend = "setuptools.build_meta"
 
-[tool.isort]
-profile = "black"
-known_first_party = "sarathi"
-known_third_party = "wandb"
+[project.optional-dependencies]
+compile = ["sarathi_kernels"]
+
+[dependency-groups]
+dev = [
+    "jupyter>=1.1.1",
+    "matplotlib>=3.9.2",
+    "pandas>=2.2.3",
+    "wandb>=0.18.7",
+    "setuptools>=75.6.0"
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[[tool.uv.index]]
+name = "flashinfer-cu124"
+url = "https://flashinfer.ai/whl/cu124/torch2.4/"
+explicit = true
+
+[tool.uv.sources]
+sarathi_kernels = { path = "sarathi_kernels" }
+torch = [
+  { index = "pytorch-cu124" },
+]
+flashinfer = [
+  { index = "flashinfer-cu124" }
+]
+
+[tool.uv]
+no-build-isolation-package = ["sarathi_kernels"]

@@ -9,7 +9,6 @@ import setuptools
 import torch
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension, CUDA_HOME
 
-ROOT_DIR = os.path.dirname(__file__)
 
 # Compiler flags.
 CXX_FLAGS = ["-g", "-O2", "-std=c++17"]
@@ -94,7 +93,7 @@ ext_modules = []
 
 # Positional encoding kernels.
 positional_encoding_extension = CUDAExtension(
-    name="sarathi.pos_encoding_ops",
+    name="sarathi_kernels.pos_encoding_ops",
     sources=["csrc/pos_encoding.cpp", "csrc/pos_encoding_kernels.cu"],
     extra_compile_args={
         "cxx": CXX_FLAGS,
@@ -105,7 +104,7 @@ ext_modules.append(positional_encoding_extension)
 
 # Layer normalization kernels.
 layernorm_extension = CUDAExtension(
-    name="sarathi.layernorm_ops",
+    name="sarathi_kernels.layernorm_ops",
     sources=["csrc/layernorm.cpp", "csrc/layernorm_kernels.cu"],
     extra_compile_args={
         "cxx": CXX_FLAGS,
@@ -116,7 +115,7 @@ ext_modules.append(layernorm_extension)
 
 # Activation kernels.
 activation_extension = CUDAExtension(
-    name="sarathi.activation_ops",
+    name="sarathi_kernels.activation_ops",
     sources=["csrc/activation.cpp", "csrc/activation_kernels.cu"],
     extra_compile_args={
         "cxx": CXX_FLAGS,
@@ -127,7 +126,7 @@ ext_modules.append(activation_extension)
 
 # Fused MOR kernels.
 moe_extension = CUDAExtension(
-    name="sarathi.moe_ops",
+    name="sarathi_kernels.moe_ops",
     sources=[
         "csrc/moe.cpp",
         "csrc/moe_align_block_size_kernels.cu",
@@ -142,7 +141,7 @@ ext_modules.append(moe_extension)
 
 # Cache kernels
 cache_kernel_extension = CUDAExtension(
-    name="sarathi.cache_ops",
+    name="sarathi_kernels.cache_ops",
     sources=["csrc/cache.cpp", "csrc/cache_kernels.cu"],
     extra_compile_args={
         "cxx": CXX_FLAGS,
@@ -151,54 +150,10 @@ cache_kernel_extension = CUDAExtension(
 )
 ext_modules.append(cache_kernel_extension)
 
-
-def get_path(*filepath) -> str:
-    return os.path.join(ROOT_DIR, *filepath)
-
-
-def find_version(filepath: str):
-    """Extract version information from the given filepath.
-
-    Adapted from https://github.com/ray-project/ray/blob/0b190ee1160eeca9796bc091e07eaebf4c85b511/python/setup.py
-    """
-    with open(filepath) as fp:
-        version_match = re.search(
-            r"^__version__ = ['\"]([^'\"]*)['\"]", fp.read(), re.M
-        )
-        if version_match:
-            return version_match.group(1)
-        raise RuntimeError("Unable to find version string.")
-
-
-def read_readme() -> str:
-    """Read the README file."""
-    return io.open(get_path("README.md"), "r", encoding="utf-8").read()
-
-
-def get_requirements() -> List[str]:
-    """Get Python package dependencies from requirements.txt."""
-    with open(get_path("requirements.txt")) as f:
-        requirements = f.read().strip().split("\n")
-    return requirements
-
-
 setuptools.setup(
-    name="sarathi",
-    version=find_version(get_path("sarathi", "__init__.py")),
-    author="Sarathi Team",
-    license="Apache 2.0",
-    description=("A high-throughput and low-latency serving engine for LLMs"),
-    long_description=read_readme(),
-    long_description_content_type="text/markdown",
-    url="https://github.com/microsoft/sarathi",
-    classifiers=[
-        "Programming Language :: Python :: 3.10",
-        "License :: OSI Approved :: Apache Software License",
-        "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    ],
-    packages=setuptools.find_packages(exclude=("benchmarks", "csrc")),
-    python_requires=">=3.10",
-    install_requires=get_requirements(),
+    name="sarathi_kernels",
+    version="0.0.1",
+    packages=setuptools.find_packages(),
     ext_modules=ext_modules,
     cmdclass={"build_ext": BuildExtension},
 )

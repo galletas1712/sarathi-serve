@@ -1,0 +1,7 @@
+[project]
+name = "sarathi-kernels"
+version = "0.0.1"
+
+[build-system]
+requires = ["setuptools", "torch"]
+build-backend = "setuptools.build_meta"
