@@ -8,14 +8,15 @@ from sarathi.config import (
 from sarathi.config.config import FCFSDisaggEmulationSchedulerConfig
 from sarathi.core.block_space_manager import BlockDevice
 from sarathi.core.datatypes.sequence import Sequence, SequenceScheduleMetadata
-from sarathi.core.scheduler.disagg_emulation_base_scheduler import DisaggEmulationBaseScheduler
+from sarathi.core.scheduler.disagg_emulation_base_scheduler import (
+    DisaggEmulationBaseScheduler,
+)
 from sarathi.logger import init_logger
 
 logger = init_logger(__name__)
 
 
 class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
-
     def __init__(
         self,
         model_config: ModelConfig,
@@ -35,8 +36,13 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         )
 
         return next_num_tokens
-    
-    def _schedule_prefills(self, running_prefills: List[Sequence], running_decodes: List[Sequence], now: float):
+
+    def _schedule_prefills(
+        self,
+        running_prefills: List[Sequence],
+        running_decodes: List[Sequence],
+        now: float,
+    ):
         if self.swapped_out:
             # There are requests currently swapped ot, so we can't schedule any new requests
             return (
@@ -49,7 +55,9 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 [],
             )
 
-        running = [*running_decodes] # NOTE: running decodes, doesn't strictly have to come first in order
+        running = [
+            *running_decodes
+        ]  # NOTE: running decodes, doesn't strictly have to come first in order
         ignored_seq_ids = []
         scheduled_seq_id_metadata_list = []
 
@@ -73,7 +81,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 continue
 
             num_batched_tokens += next_num_prefill_tokens
-            
+
             scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(
                     seq, prompt_chunk_len=next_num_prefill_tokens
@@ -102,7 +110,9 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
 
             # The total number of sequences in the RUNNING state should not
             # exceed the maximum number of sequences.
-            if len(running) >= self.scheduler_config.max_num_seqs:  # NOTE: running here will already incldue decodes, which is great
+            if (
+                len(running) >= self.scheduler_config.max_num_seqs
+            ):  # NOTE: running here will already incldue decodes, which is great
                 break
 
             # check if we can fit the prefill in the batch
@@ -122,7 +132,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 )
             )
             running.append(seq)
-        
+
         return (
             running,
             ignored_seq_ids,
@@ -130,7 +140,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             [],
             [],
             [],
-            scheduled_seq_id_metadata_list
+            scheduled_seq_id_metadata_list,
         )
 
     def _schedule_decodes(self, running_decodes: List[Sequence], now: float):
@@ -143,7 +153,11 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         num_batched_tokens = 0
 
         # True FCFS order
-        queue = sorted([*running_decodes, *self.swapped_out.values()], key=lambda seq: now - seq.arrival_time, reverse=True)
+        queue = sorted(
+            [*running_decodes, *self.swapped_out.values()],
+            key=lambda seq: now - seq.arrival_time,
+            reverse=True,
+        )
 
         while queue:
             seq = queue.pop(0)
@@ -152,49 +166,71 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
 
             def can_append_slot():
                 return self.block_manager.can_append_slot(seq)
-            
+
             def can_swap_in_and_append_slot():
-                return self.block_manager.can_swap_in_and_append_slot(seq.seq_id, seq.get_num_logical_blocks())
-            
-            can_schedule = can_append_slot if seq.is_paused() else can_swap_in_and_append_slot
+                return self.block_manager.can_swap_in_and_append_slot(
+                    seq.seq_id, seq.get_num_logical_blocks()
+                )
+
+            can_schedule = (
+                can_append_slot if seq.is_paused() else can_swap_in_and_append_slot
+            )
 
             while not can_schedule():
                 if queue:
                     # Preempt the lowest-priority sequence groups.
                     victim_seq = queue.pop(-1)
                     if victim_seq.is_paused():
-                        print(f"Iteration {self._iteration_id}: Swapping out {victim_seq.seq_id} to make space for {seq.seq_id}")
+                        print(
+                            f"Iteration {self._iteration_id}: Swapping out {victim_seq.seq_id} to make space for {seq.seq_id}"
+                        )
                         self._swap_out(victim_seq)
                         swap_out_seq_ids.append(victim_seq.seq_id)
                     else:
-                        print(f"Iteration {self._iteration_id}: Leaving {victim_seq.seq_id} swapped out to make space for {seq.seq_id}")
+                        print(
+                            f"Iteration {self._iteration_id}: Leaving {victim_seq.seq_id} swapped out to make space for {seq.seq_id}"
+                        )
                         assert victim_seq.is_swapped_out()
                 else:
                     # No other sequence groups can be prempted.
                     # Preempt the current sequence group.
                     if seq.is_paused():
-                        print(f"Iteration {self._iteration_id}: Swapping out {seq.seq_id} because can't run :(")
+                        print(
+                            f"Iteration {self._iteration_id}: Swapping out {seq.seq_id} because can't run :("
+                        )
                         if self.cache_config.partial_swap_out:
-                            num_blocks_to_swap = self.block_manager.get_seq_num_blocks_allocated(seq.seq_id, BlockDevice.GPU)
+                            num_blocks_to_swap = (
+                                self.block_manager.get_seq_num_blocks_allocated(
+                                    seq.seq_id, BlockDevice.GPU
+                                )
+                            )
                             self._swap_out(seq, num_blocks_to_swap)
                             swap_out_lens.append(num_blocks_to_swap)
                         else:
                             self._swap_out(seq)
                         swap_out_seq_ids.append(seq.seq_id)
                     else:
-                        print(f"Iteration {self._iteration_id}: Can't swap in {seq.seq_id} because no space :(")
+                        print(
+                            f"Iteration {self._iteration_id}: Can't swap in {seq.seq_id} because no space :("
+                        )
                         assert seq.is_swapped_out()
                     break
             else:
-                assert seq.is_paused() or seq.is_swapped_out(), f"Sequence {seq.seq_id} is in an invalid state: {seq.get_status()}"
+                assert (
+                    seq.is_paused() or seq.is_swapped_out()
+                ), f"Sequence {seq.seq_id} is in an invalid state: {seq.get_status()}"
 
                 if seq.is_swapped_out():
                     print(f"Iteration {self._iteration_id}: Swapping in {seq.seq_id}")
-                    assert self.block_manager.can_swap_in_and_append_slot(seq.seq_id, seq.get_num_logical_blocks())
+                    assert self.block_manager.can_swap_in_and_append_slot(
+                        seq.seq_id, seq.get_num_logical_blocks()
+                    )
                     self._swap_in(seq)
                     swap_in_seq_ids.append(seq.seq_id)
 
-                if seq.is_paused() or (seq.is_swapped_out() and not self.cache_config.async_swap_in):
+                if seq.is_paused() or (
+                    seq.is_swapped_out() and not self.cache_config.async_swap_in
+                ):
                     print(f"Iteration {self._iteration_id}: Scheduling {seq.seq_id}")
                     # Append new slots to the sequence group.
                     self._append_slot(seq)
@@ -203,7 +239,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                     scheduled_seq_id_metadata_list.append(
                         SequenceScheduleMetadata.from_sequence(seq)
                     )
-        
+
         return (
             running,
             [],
@@ -211,5 +247,5 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             swap_out_seq_ids,
             swap_out_lens,
             swap_in_seq_ids,
-            scheduled_seq_id_metadata_list
+            scheduled_seq_id_metadata_list,
         )

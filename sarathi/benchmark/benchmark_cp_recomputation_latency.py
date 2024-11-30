@@ -6,23 +6,26 @@ import torch
 from sarathi.benchmark.config import BenchmarkConfig
 from sarathi.core.datatypes.sampling_params import SamplingParams
 from sarathi.engine.llm_engine import BaseLLMEngine
-from sarathi.config.config import BaseEndpointConfig, ReplicaConfig, RollingPreemptionProfilingSchedulerConfig
+from sarathi.config.config import (
+    BaseEndpointConfig,
+    ReplicaConfig,
+    RollingPreemptionProfilingSchedulerConfig,
+)
 from dataclasses import dataclass
 
-CACHE_SIZE_PER_TOKEN = 131072 # Determined by the model
-CHUNK_SIZE_LOG_MIN = 8 # Arbitrary
-TOKEN_SIZE_LOG_MIN = 8 # Arbitrary, but should be at least chunk size min
+CACHE_SIZE_PER_TOKEN = 131072  # Determined by the model
+CHUNK_SIZE_LOG_MIN = 8  # Arbitrary
+TOKEN_SIZE_LOG_MIN = 8  # Arbitrary, but should be at least chunk size min
 TOKEN_SIZE_LOG_MAX = 17  # Determined by number of GPU blocks (~ GPU HBM size).
-MAX_MODEL_TOKENS = 65536 # Should have been 131072 but we truncate to 65536 otherwise it throws a CUDA error
+MAX_MODEL_TOKENS = 65536  # Should have been 131072 but we truncate to 65536 otherwise it throws a CUDA error
 NUM_PASSES = 4
 
 
 benchmark_config = BenchmarkConfig.create_from_cli_args()
 replica_config = ReplicaConfig(
-    0,
-    benchmark_config.output_dir,
-    [('node:172.19.128.82', 0)]
+    0, benchmark_config.output_dir, [("node:172.19.128.82", 0)]
 )
+
 
 @dataclass
 class BenchmarkDim:
@@ -30,23 +33,40 @@ class BenchmarkDim:
     batch_size: int
     chunk_size: int
 
+
 benchmark_dims = []
 
-token_count_logs = torch.linspace(start=TOKEN_SIZE_LOG_MIN, end=TOKEN_SIZE_LOG_MAX, steps=TOKEN_SIZE_LOG_MAX-TOKEN_SIZE_LOG_MIN+1, dtype=int).tolist()
+token_count_logs = torch.linspace(
+    start=TOKEN_SIZE_LOG_MIN,
+    end=TOKEN_SIZE_LOG_MAX,
+    steps=TOKEN_SIZE_LOG_MAX - TOKEN_SIZE_LOG_MIN + 1,
+    dtype=int,
+).tolist()
 token_count_logs = reversed(token_count_logs)
 
 for token_count_log in token_count_logs:
-    token_count = int(2 ** token_count_log)
+    token_count = int(2**token_count_log)
 
     chunk_size_log_max = min(token_count_log, int(math.log2(MAX_MODEL_TOKENS)))
-    chunk_size_logs = torch.linspace(start=CHUNK_SIZE_LOG_MIN, end=chunk_size_log_max, steps=chunk_size_log_max-CHUNK_SIZE_LOG_MIN+1, dtype=int).tolist()
+    chunk_size_logs = torch.linspace(
+        start=CHUNK_SIZE_LOG_MIN,
+        end=chunk_size_log_max,
+        steps=chunk_size_log_max - CHUNK_SIZE_LOG_MIN + 1,
+        dtype=int,
+    ).tolist()
     chunk_size_logs = reversed(chunk_size_logs)
     for chunk_size_log in chunk_size_logs:
-        chunk_size = int(2 ** chunk_size_log)
+        chunk_size = int(2**chunk_size_log)
 
         batch_size_log_lo = max(token_count_log - int(math.log2(MAX_MODEL_TOKENS)), 0)
         batch_size_log_hi = token_count_log - chunk_size_log
-        batch_sizes = torch.logspace(start=batch_size_log_lo, end=batch_size_log_hi, steps=batch_size_log_hi-batch_size_log_lo+1, base=2, dtype=int).tolist()
+        batch_sizes = torch.logspace(
+            start=batch_size_log_lo,
+            end=batch_size_log_hi,
+            steps=batch_size_log_hi - batch_size_log_lo + 1,
+            base=2,
+            dtype=int,
+        ).tolist()
 
         for batch_size in batch_sizes:
             max_seq_len = token_count // batch_size
@@ -73,10 +93,18 @@ for benchmark_dim in benchmark_dims:
     ).create_system_config(replica_config)
     engine = BaseLLMEngine(system_config)
 
-    print(f"Creating {2 * benchmark_dim.batch_size} sequences of length {benchmark_dim.max_seq_len}...")
+    print(
+        f"Creating {2 * benchmark_dim.batch_size} sequences of length {benchmark_dim.max_seq_len}..."
+    )
     for _ in range(2 * benchmark_dim.batch_size):
-        sampling_params = SamplingParams(temperature=0, max_tokens=benchmark_dim.max_seq_len)
-        engine.add_request(None, sampling_params, prompt_token_ids=list(range(benchmark_dim.max_seq_len)))
+        sampling_params = SamplingParams(
+            temperature=0, max_tokens=benchmark_dim.max_seq_len
+        )
+        engine.add_request(
+            None,
+            sampling_params,
+            prompt_token_ids=list(range(benchmark_dim.max_seq_len)),
+        )
 
     # Warmup
     for _ in range(num_chunked_prefill_iters):
@@ -86,7 +114,7 @@ for benchmark_dim in benchmark_dims:
     start_all = time.perf_counter_ns()
     start = time.perf_counter_ns()
     # engine.start_profiling()
-    for i in range(NUM_PASSES *  num_chunked_prefill_iters):
+    for i in range(NUM_PASSES * num_chunked_prefill_iters):
         outputs = engine.step()
         # print("State:")
         # for seq in engine.seq_manager.seq_map.values():
@@ -103,23 +131,29 @@ for benchmark_dim in benchmark_dims:
     # engine.pull_worker_metrics()
     # engine.plot_metrics()
     # engine.stop_profiling()
-    
+
     mean_latency = torch.mean(torch.tensor(latencies)).item()
     std_latency = torch.std(torch.tensor(latencies)).item()
-    print(f"Mean latency: {mean_latency} ms, std latency: {std_latency} ms, mean latency (all divided by num passes): {mean_latency_all_div}")
+    print(
+        f"Mean latency: {mean_latency} ms, std latency: {std_latency} ms, mean latency (all divided by num passes): {mean_latency_all_div}"
+    )
 
     engine.terminate()
 
-    benchmark_results.append({
-        'chunk_size': benchmark_dim.chunk_size,
-        'token_count': benchmark_dim.max_seq_len * benchmark_dim.batch_size,
-        'batch_size': benchmark_dim.batch_size,
-        'max_seq_len': benchmark_dim.max_seq_len,
-        'mean_latency': mean_latency,
-        'std_latency': std_latency,
-        'mean_latency_all_div': mean_latency_all_div,
-        'kv_cache_size': CACHE_SIZE_PER_TOKEN * benchmark_dim.max_seq_len * benchmark_dim.batch_size
-    })
-    
+    benchmark_results.append(
+        {
+            "chunk_size": benchmark_dim.chunk_size,
+            "token_count": benchmark_dim.max_seq_len * benchmark_dim.batch_size,
+            "batch_size": benchmark_dim.batch_size,
+            "max_seq_len": benchmark_dim.max_seq_len,
+            "mean_latency": mean_latency,
+            "std_latency": std_latency,
+            "mean_latency_all_div": mean_latency_all_div,
+            "kv_cache_size": CACHE_SIZE_PER_TOKEN
+            * benchmark_dim.max_seq_len
+            * benchmark_dim.batch_size,
+        }
+    )
+
 df = pd.DataFrame(benchmark_results)
 df.to_csv("prefill_latency_profiling.csv", index=False)

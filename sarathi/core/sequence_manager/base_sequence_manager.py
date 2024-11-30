@@ -14,7 +14,6 @@ from sarathi.utils.threading_utils import synchronized
 
 
 class BaseSequenceManager(ABC):
-
     def __init__(self, config: SystemConfig):
         self.config = config
         self.seq_map: Dict[str, Sequence] = {}
@@ -26,7 +25,7 @@ class BaseSequenceManager(ABC):
 
     def _free_seq(self, seq_id: str) -> None:
         del self.seq_map[seq_id]
-    
+
     def _ignore_seq(self, seq_id: str) -> None:
         self.seq_map[seq_id].set_status(SequenceStatus.FINISHED_IGNORED)
         self._free_seq(seq_id)
@@ -35,15 +34,17 @@ class BaseSequenceManager(ABC):
         # Sets to WAITING inside
         self.seq_map[seq_id].reset_for_recompute()
 
-    def _swap_out_seq(self, seq_id: str, num_blocks_to_swap: Optional[int] = None) -> None:
+    def _swap_out_seq(
+        self, seq_id: str, num_blocks_to_swap: Optional[int] = None
+    ) -> None:
         self.seq_map[seq_id].set_status(SequenceStatus.SWAPPED_OUT)
-    
+
     def _begin_swap_in_seq(self, seq_id: str) -> None:
         self.seq_map[seq_id].set_status(SequenceStatus.SWAPPING_IN)
-    
+
     def _finish_swap_in_seq(self, seq_id: str) -> None:
         self.seq_map[seq_id].set_status(SequenceStatus.PAUSED)
-    
+
     def _swap_in_seq(self, seq_id: str) -> None:
         self.seq_map[seq_id].set_status(SequenceStatus.PAUSED)
 
@@ -63,15 +64,16 @@ class BaseSequenceManager(ABC):
         scheduler_outputs: SchedulerOutputs,
     ) -> None:
         assert (
-            len(scheduler_outputs.swap_out_lens) == len(scheduler_outputs.swap_out_seq_ids) or
-            len(scheduler_outputs.swap_out_lens) == 0
+            len(scheduler_outputs.swap_out_lens)
+            == len(scheduler_outputs.swap_out_seq_ids)
+            or len(scheduler_outputs.swap_out_lens) == 0
         )  # NOTE: Either we specify the number of blocks to swap out or we don't
         for seq_id in scheduler_outputs.ignored_seq_ids:
             self._ignore_seq(seq_id)
 
         for seq_id in scheduler_outputs.preempted_seq_ids:
             self._preempt_seq(seq_id)
-        
+
         # Swap out
         if scheduler_outputs.swap_out_lens:
             for seq_id, num_blocks_to_swap in zip(
@@ -82,13 +84,13 @@ class BaseSequenceManager(ABC):
         else:
             for seq_id in scheduler_outputs.swap_out_seq_ids:
                 self._swap_out_seq(seq_id)
-        
+
         for seq_id in scheduler_outputs.swap_in_seq_ids:
             if self.config.cache_config.async_swap_in:
                 self._begin_swap_in_seq(seq_id)
             else:
                 self._swap_in_seq(seq_id)
-        
+
         for seq_id_metadata in scheduler_outputs.scheduled_seq_id_metadata_list:
             self._on_seq_scheduled(seq_id_metadata)  # This will call _resume_seq inside
 
@@ -116,7 +118,7 @@ class BaseSequenceManager(ABC):
         if seq.is_finished():
             self._free_seq(seq.seq_id)
             return True
-        
+
         return False
 
     @synchronized
@@ -127,7 +129,9 @@ class BaseSequenceManager(ABC):
     ) -> List[str]:
         finished_seq_ids = []
 
-        assert len(scheduler_outputs.scheduled_seq_id_metadata_list) == len(sampler_outputs)
+        assert len(scheduler_outputs.scheduled_seq_id_metadata_list) == len(
+            sampler_outputs
+        )
         for seq_id_metadata, sampler_output in zip(
             scheduler_outputs.scheduled_seq_id_metadata_list, sampler_outputs
         ):
@@ -145,9 +149,7 @@ class BaseSequenceManager(ABC):
             #     continue
 
             if not seq.is_prompt_processing_finished():
-                seq.update_prompt_tokens_processed(
-                    seq_id_metadata.prompt_chunk_len
-                )
+                seq.update_prompt_tokens_processed(seq_id_metadata.prompt_chunk_len)
 
             self._pause_seq(seq_id)
 
@@ -157,7 +159,7 @@ class BaseSequenceManager(ABC):
             )
             if finished:
                 finished_seq_ids.append(seq_id)
-        
+
         return finished_seq_ids
 
     @synchronized

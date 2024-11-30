@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 
 def if_write_metrics(func):
-
     def wrapper(self, *args, **kwargs):
         if self.config.write_metrics and self.initial_memory_profiling_done:
             return func(self, *args, **kwargs)
@@ -43,7 +42,6 @@ def if_write_metrics(func):
 
 
 def check_enabled(func):
-
     def wrapper(self, *args, **kwargs):
         if self.disabled:
             return
@@ -63,7 +61,6 @@ OPERATION_STR = "Operation"
 
 
 class MetricsStore:
-
     def __init__(
         self,
         replica_config: ReplicaConfig,
@@ -507,7 +504,9 @@ class MetricsStore:
         execution_time = batch_end_time - batch_start_time
 
         for seq_exec_metadata in seq_exec_metadata_list:
-            self._update_per_token_execution_times(batch_end_time, seq_exec_metadata.seq)
+            self._update_per_token_execution_times(
+                batch_end_time, seq_exec_metadata.seq
+            )
             if seq_exec_metadata.seq.is_finished():
                 self._on_request_end(seq_exec_metadata.seq)
 
@@ -550,13 +549,15 @@ class MetricsStore:
         start_time: float,
         end_time: float,
     ) -> Optional[Dict[str, Any]]:
-
         if tensor_parallel_rank != 0:
             return None
 
-        seq_ids = [seq_exec_metadata.seq.seq_id for seq_exec_metadata in seq_exec_metadata_list]
+        seq_ids = [
+            seq_exec_metadata.seq.seq_id for seq_exec_metadata in seq_exec_metadata_list
+        ]
         prompt_chunk_lens = [
-            seq_exec_metadata.prompt_chunk_len for seq_exec_metadata in seq_exec_metadata_list
+            seq_exec_metadata.prompt_chunk_len
+            for seq_exec_metadata in seq_exec_metadata_list
         ]
 
         num_batched_prompt_tokens = sum(prompt_chunk_lens)
@@ -803,22 +804,26 @@ class MetricsStore:
         for dataseries in self.batch_metrics_time_distribution.values():
             dataseries.plot_cdf(base_plot_path, dataseries.metric_name, TIME_STR)
             if self.config.keep_individual_batch_metrics:
-                dataseries.plot_step(
-                    base_plot_path,
-                    f"{dataseries.metric_name}_per_batch",
-                    y_axis_label=TIME_STR,
-                    y_cumsum=False,
-                ),
+                (
+                    dataseries.plot_step(
+                        base_plot_path,
+                        f"{dataseries.metric_name}_per_batch",
+                        y_axis_label=TIME_STR,
+                        y_cumsum=False,
+                    ),
+                )
 
         for dataseries in self.batch_metrics_count_distribution.values():
             dataseries.plot_cdf(base_plot_path, dataseries.metric_name, COUNT_STR)
             if self.config.keep_individual_batch_metrics:
-                dataseries.plot_step(
-                    base_plot_path,
-                    f"{dataseries.metric_name}_per_batch",
-                    y_axis_label=COUNT_STR,
-                    y_cumsum=False,
-                ),
+                (
+                    dataseries.plot_step(
+                        base_plot_path,
+                        f"{dataseries.metric_name}_per_batch",
+                        y_axis_label=COUNT_STR,
+                        y_cumsum=False,
+                    ),
+                )
 
     def _store_completion_metrics(self, base_plot_path: str):
         for dataseries in self.token_metrics_time_distribution.values():

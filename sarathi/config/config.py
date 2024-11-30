@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Optional
 
 from sarathi.config.base_poly_config import BasePolyConfig
 from sarathi.config.flat_dataclass import create_flat_dataclass
@@ -161,9 +161,7 @@ class CacheConfig:
     )
     num_cpu_blocks: Optional[int] = field(
         default=8192,  # TODO: change back to 24088, or actually match the GPU
-        metadata={
-            "help": "Number of CPU blocks for caching."
-        },
+        metadata={"help": "Number of CPU blocks for caching."},
     )
     async_swap_in: bool = field(
         default=False,
@@ -175,12 +173,16 @@ class CacheConfig:
     )
     duplicate_kv_cache: bool = field(
         default=False,
-        metadata={"help": "Duplicate KV cache in host memory of all running requests. Requires num_cpu_blocks > num_gpu_blocks."},
+        metadata={
+            "help": "Duplicate KV cache in host memory of all running requests. Requires num_cpu_blocks > num_gpu_blocks."
+        },
     )
 
     def __post_init__(self):
         if self.duplicate_kv_cache:
-            assert self.num_cpu_blocks > self.num_gpu_blocks, "num_cpu_blocks must be greater than num_gpu_blocks for duplicate_kv_cache=True."
+            assert (
+                self.num_cpu_blocks > self.num_gpu_blocks
+            ), "num_cpu_blocks must be greater than num_gpu_blocks for duplicate_kv_cache=True."
 
 
 @dataclass
@@ -208,7 +210,7 @@ class BaseSchedulerConfig(BasePolyConfig):
     uses_chunked_prefill: bool = field(default=False)
 
     @abstractmethod
-    def get_max_num_batched_tokens(self, max_model_len: int):
+    def get_max_num_batched_tokens(self, max_model_len: int) -> int:
         pass
 
 
@@ -235,9 +237,10 @@ class SarathiSchedulerConfig(BaseSchedulerConfig):
     )
     uses_chunked_prefill: bool = field(default=True)
 
-    def get_max_num_batched_tokens(self, max_model_len: int):
+    def get_max_num_batched_tokens(self, max_model_len: int) -> int:
         # Sarathi never schedules more than chunk_size tokens in one iteration.
         if self.enable_dynamic_chunking_schedule:
+            assert self.high_chunk_size is not None
             return self.high_chunk_size
         else:
             return self.chunk_size
@@ -250,16 +253,18 @@ class SarathiSchedulerConfig(BaseSchedulerConfig):
 @dataclass
 class DisaggEmulationSchedulerConfig(BaseSchedulerConfig):
     chunk_size: int = field(
-        default=2048, metadata={"help": "Size of each chunk for disagg emulation scheduler."}
+        default=2048,
+        metadata={"help": "Size of each chunk for disagg emulation scheduler."},
     )
     uses_chunked_prefill: bool = field(default=True)
 
-    def get_max_num_batched_tokens(self, max_model_len: int):
+    def get_max_num_batched_tokens(self, max_model_len: int) -> int:
         return self.chunk_size
 
     @staticmethod
     def get_type():
         return SchedulerType.DISAGG_EMULATION
+
 
 @dataclass
 class FCFSDisaggEmulationSchedulerConfig(DisaggEmulationSchedulerConfig):
@@ -276,13 +281,17 @@ class MLFQDisaggEmulationSchedulerConfig(DisaggEmulationSchedulerConfig):
 
     def get_quantums(self):
         return self.quantums
-    
+
     @staticmethod
     def get_type():
         return SchedulerType.MLFQ_DISAGG_EMULATION
-    
+
     def __post_init__(self):
-        self.quantums = [self.starvation_limit // 4, self.starvation_limit // 2, self.starvation_limit]
+        self.quantums = [
+            self.starvation_limit // 4,
+            self.starvation_limit // 2,
+            self.starvation_limit,
+        ]
 
 
 @dataclass
@@ -340,7 +349,8 @@ class ReplicaConfig:
     def get_resource_mapping(self, world_size: int):
         if not self.resource_mapping:
             self.resource_mapping = [
-                (None, i) for i in range(world_size)  # List of (node_ip, gpu_id)
+                (None, i)
+                for i in range(world_size)  # List of (node_ip, gpu_id)
             ]
         return self.resource_mapping
 

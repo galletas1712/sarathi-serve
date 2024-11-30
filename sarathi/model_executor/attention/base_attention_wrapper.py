@@ -45,9 +45,7 @@ class BaseAttentionWrapper(ABC):
 
     def init_cache_engine(self, cache_config: CacheConfig) -> None:
         self.cache_engine = CacheEngine(
-            self.model_config,
-            self.parallel_config,
-            cache_config
+            self.model_config, self.parallel_config, cache_config
         )
 
     @abstractmethod

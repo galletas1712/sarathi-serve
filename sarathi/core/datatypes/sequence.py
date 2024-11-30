@@ -41,35 +41,35 @@ class SequenceBase:
             arrival_time=arrival_time,
             sampling_params=sampling_params,
         )
-    
+
     @property
     def seq_id(self) -> str:
         return self._init_params.seq_id
-    
+
     @property
     def prompt(self) -> str:
         return self._init_params.prompt
-    
+
     @property
     def prompt_token_ids(self) -> List[int]:
         return self._init_params.prompt_token_ids
-    
+
     @property
     def block_size(self) -> int:
         return self._init_params.block_size
-    
+
     @property
     def eos_token_id(self) -> int:
         return self._init_params.eos_token_id
-    
+
     @property
     def arrival_time(self) -> float:
         return self._init_params.arrival_time
-    
+
     @property
     def sampling_params(self) -> SamplingParams:
         return self._init_params.sampling_params
-    
+
     def _append_output_tokens_to_prompt_tokens(self, output_token_ids: List[int]):
         self._init_params = SequenceInitParams(
             seq_id=self.seq_id,
@@ -124,7 +124,7 @@ class Sequence(SequenceBase):
 
         # We need to create the logical blocks for the prompt tokens right away.
         self.__create_logical_blocks_for_tokens(self.get_prompt_len())
-    
+
     #################### Derived properties. Everything returned is a copy/cannot be used to alter the state of the sequence. ####################
 
     # Lengths
@@ -134,15 +134,15 @@ class Sequence(SequenceBase):
 
     def get_output_len(self) -> int:
         return len(self.__output_token_ids)
-    
+
     def get_total_len(self) -> int:
         return self.get_prompt_len() + self.get_output_len()
-    
+
     # Prefill
 
     def get_num_prompt_tokens_processed(self) -> int:
         return self.__num_prompt_tokens_processed
-    
+
     def is_prompt_processing_finished(self) -> bool:
         return self.__num_prompt_tokens_processed == len(self.prompt_token_ids)
 
@@ -157,19 +157,20 @@ class Sequence(SequenceBase):
 
     def get_next_prompt_chunk_len(self, chunk_size: int) -> int:
         return min(
-            chunk_size, len(self.prompt_token_ids) - self.get_num_prompt_tokens_processed()
+            chunk_size,
+            len(self.prompt_token_ids) - self.get_num_prompt_tokens_processed(),
         )
 
     # Logical blocks
 
     def get_num_logical_blocks(self) -> int:
         return self.__num_logical_blocks
-    
+
     # Token IDs
 
     def get_output_token_ids(self) -> List[int]:
         return deepcopy(self.__output_token_ids)
-    
+
     def get_all_token_ids(self) -> List[int]:
         return self.prompt_token_ids + self.__output_token_ids
 
@@ -177,7 +178,7 @@ class Sequence(SequenceBase):
         if not self.__output_token_ids:
             return self.prompt_token_ids[-1]
         return self.__output_token_ids[-1]
-    
+
     #################### Update operations ####################
 
     # Private
@@ -188,11 +189,11 @@ class Sequence(SequenceBase):
             slots_to_occupy = min(self.__num_free_slots_last_block, num_tokens_to_add)
             self.__num_free_slots_last_block -= slots_to_occupy
             num_tokens_to_add -= slots_to_occupy
-        
+
         assert num_tokens_to_add >= 0
         if num_tokens_to_add == 0:
             return
-        
+
         # Now, create as many blocks as necessary
         assert self.__num_free_slots_last_block == 0
         num_blocks_to_add = (num_tokens_to_add + self.block_size - 1) // self.block_size
@@ -200,10 +201,12 @@ class Sequence(SequenceBase):
         if num_tokens_to_add % self.block_size == 0:
             self.__num_free_slots_last_block = 0
         else:
-            self.__num_free_slots_last_block = self.block_size - (num_tokens_to_add % self.block_size)
+            self.__num_free_slots_last_block = self.block_size - (
+                num_tokens_to_add % self.block_size
+            )
 
     # Public
-     
+
     def update_prompt_tokens_processed(self, num_tokens: int) -> None:
         assert not self.is_prompt_processing_finished()
         assert num_tokens > 0
@@ -218,20 +221,19 @@ class Sequence(SequenceBase):
         assert self.is_prompt_processing_finished()
         self.__output_token_ids.append(token_id)
         self.__create_logical_blocks_for_tokens(1)
-    
+
     def reset_for_recompute(self):
         self.set_status(SequenceStatus.WAITING)
         self.__num_prompt_tokens_processed = 0
         self._append_output_tokens_to_prompt_tokens(self.__output_token_ids)
         self.__output_token_ids = []
         # No need to reset logical blocks here
-    
-        
+
     #################### State ####################
 
     def get_status(self) -> SequenceStatus:
         return deepcopy(self.__status)
-    
+
     def check_transition(self, new_status: SequenceStatus) -> None:
         SequenceStatus.check_transition(self.get_status(), new_status)
 
@@ -253,10 +255,10 @@ class Sequence(SequenceBase):
 
     def is_running(self) -> bool:
         return SequenceStatus.is_running(self.get_status())
-    
+
     def is_swapping_in(self) -> bool:
         return SequenceStatus.is_swapping_in(self.get_status())
-    
+
     def is_swapped_out(self) -> bool:
         return SequenceStatus.is_swapped_out(self.get_status())
 
@@ -330,29 +332,35 @@ class DecodeableSequence(Sequence):
     @property
     def prefix_offset(self) -> int:
         return self.__prefix_offset
-    
+
     @property
     def read_offset(self) -> int:
         return self.__read_offset
-    
+
     @property
     def tokens_decoded_so_far(self) -> Optional[List[int]]:
         return self.__tokens_decoded_so_far
-    
+
     @property
     def output_text(self) -> str:
         return self.__output_text
-    
-    def update_decode_state(self, new_tokens: List[int], prefix_offset: int, read_offset: int, new_output_text: str) -> None:
+
+    def update_decode_state(
+        self,
+        new_tokens: List[int],
+        prefix_offset: int,
+        read_offset: int,
+        new_output_text: str,
+    ) -> None:
         if self.__tokens_decoded_so_far is None:
             self.__tokens_decoded_so_far = new_tokens
         else:
             self.__tokens_decoded_so_far.extend(new_tokens)
-        
+
         self.__prefix_offset = prefix_offset
         self.__read_offset = read_offset
         self.__output_text += new_output_text
-    
+
 
 @dataclass(frozen=True)
 class SequenceScheduleMetadata:

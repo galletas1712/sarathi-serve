@@ -3,12 +3,15 @@ from typing import Dict, List, Optional, Tuple
 from sarathi.config import SystemConfig
 from sarathi.core.block_space_manager import BlockDevice, BlockSpaceManager
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
-from sarathi.core.datatypes.sequence import Sequence, SequenceExecutionMetadata, SequenceScheduleMetadata
+from sarathi.core.datatypes.sequence import (
+    Sequence,
+    SequenceExecutionMetadata,
+    SequenceScheduleMetadata,
+)
 from sarathi.core.sequence_manager.base_sequence_manager import BaseSequenceManager
 
 
 class WorkerSequenceManager(BaseSequenceManager):
-
     def __init__(
         self,
         config: SystemConfig,
@@ -28,14 +31,16 @@ class WorkerSequenceManager(BaseSequenceManager):
     def _free_seq(self, seq_id: str) -> None:
         # ignored sequences might not have been allocated
         assert seq_id in self.seq_map
-        if self.block_manager.is_allocated_in_gpu(seq_id) or self.block_manager.is_allocated_in_cpu(seq_id):
+        if self.block_manager.is_allocated_in_gpu(
+            seq_id
+        ) or self.block_manager.is_allocated_in_cpu(seq_id):
             self.block_manager.free(seq_id)
         super()._free_seq(seq_id)
 
     def _preempt_seq(self, seq_id: str) -> None:
         super()._preempt_seq(seq_id)
         self.block_manager.free(seq_id)
-    
+
     def _begin_swap_in_seq(self, seq_id: str) -> None:
         super()._begin_swap_in_seq(seq_id)
         self.block_manager.begin_swap_in(seq_id)
@@ -43,15 +48,17 @@ class WorkerSequenceManager(BaseSequenceManager):
     def _finish_swap_in_seq(self, seq_id: str) -> None:
         super()._finish_swap_in_seq(seq_id)
         self.block_manager.finish_swap_in(seq_id)
-    
+
     def _swap_in_seq(self, seq_id: str) -> None:
         super()._swap_in_seq(seq_id)
         self.block_manager.swap_in(seq_id)
-    
-    def _swap_out_seq(self, seq_id: str, num_blocks_to_swap: Optional[int] = None) -> None:
+
+    def _swap_out_seq(
+        self, seq_id: str, num_blocks_to_swap: Optional[int] = None
+    ) -> None:
         super()._swap_out_seq(seq_id, num_blocks_to_swap)
         self.block_manager.swap_out(seq_id, num_blocks_to_swap)
-    
+
     def _on_seq_scheduled(self, seq_id_metadata: SequenceScheduleMetadata) -> None:
         assert seq_id_metadata.seq_id in self.seq_map
         seq = self.seq_map[seq_id_metadata.seq_id]
@@ -61,37 +68,46 @@ class WorkerSequenceManager(BaseSequenceManager):
             self.block_manager.allocate(seq)
         elif not seq_id_metadata.is_prompt:
             self.block_manager.append_slot(seq)
-        
+
         # NOTE: Here, we assume that in chunked prefill mode, the full sequence is allocated,
         # which means in later chunks, we don't need to allocate. But when decoding, we do need to append slots.
 
-        super()._on_seq_scheduled(seq_id_metadata)  # This just sets the status to resumed
-    
+        super()._on_seq_scheduled(
+            seq_id_metadata
+        )  # This just sets the status to resumed
+
     def _on_append_token(self, seq: Sequence) -> None:
         # the engine performs detokenization at this point
         # but we don't need to do anything here on worker side
         pass
 
-    def get_seq_exec_metadata_list(self, scheduler_outputs: SchedulerOutputs) -> List[SequenceExecutionMetadata]:
+    def get_seq_exec_metadata_list(
+        self, scheduler_outputs: SchedulerOutputs
+    ) -> List[SequenceExecutionMetadata]:
         # This will extract the actual sequence object and block table
         return [
             SequenceExecutionMetadata(
                 seq=self.seq_map[seq_id_metadata.seq_id],
-                block_table=self.block_manager.get_gpu_block_table(seq_id_metadata.seq_id),
+                block_table=self.block_manager.get_gpu_block_table(
+                    seq_id_metadata.seq_id
+                ),
                 prompt_chunk_len=seq_id_metadata.prompt_chunk_len,
             )
             for seq_id_metadata in scheduler_outputs.scheduled_seq_id_metadata_list
         ]
 
-    def get_swap_out_mappings(self, swap_out_seq_ids: List[str]) -> Dict[str, List[Tuple[int, int]]]:
+    def get_swap_out_mappings(
+        self, swap_out_seq_ids: List[str]
+    ) -> Dict[str, List[Tuple[int, int]]]:
         return {
             seq_id: self.block_manager.get_swap_out_mapping(seq_id)
             for seq_id in swap_out_seq_ids
         }
 
-    def get_swap_in_mappings(self, swap_in_seq_ids: List[str]) -> Dict[str, List[Tuple[int, int]]]:
+    def get_swap_in_mappings(
+        self, swap_in_seq_ids: List[str]
+    ) -> Dict[str, List[Tuple[int, int]]]:
         return {
             seq_id: self.block_manager.get_swap_in_mapping(seq_id)
             for seq_id in swap_in_seq_ids
         }
-    

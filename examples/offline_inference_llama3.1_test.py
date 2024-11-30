@@ -2,7 +2,15 @@ import datetime
 from tqdm import tqdm
 from typing import List
 
-from sarathi.config import ModelConfig, ParallelConfig, FCFSDisaggEmulationSchedulerConfig, MLFQDisaggEmulationSchedulerConfig, MetricsConfig, SystemConfig, ReplicaConfig
+from sarathi.config import (
+    ModelConfig,
+    ParallelConfig,
+    FCFSDisaggEmulationSchedulerConfig,
+    MLFQDisaggEmulationSchedulerConfig,
+    MetricsConfig,
+    SystemConfig,
+    ReplicaConfig,
+)
 from sarathi import LLMEngine, SamplingParams, RequestOutput
 
 
@@ -27,7 +35,9 @@ prompts = [
 # Create a sampling params object.
 sampling_params = SamplingParams(temperature=0.8, top_p=0.95, max_tokens=100)
 
-output_dir = f"{BASE_OUTPUT_DIR}/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+output_dir = (
+    f"{BASE_OUTPUT_DIR}/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+)
 
 replica_config = ReplicaConfig(
     output_dir=output_dir,
@@ -65,7 +75,7 @@ def generate(
 ) -> List[RequestOutput]:
     for prompt in prompts[:5]:
         llm_engine.add_request(prompt, sampling_params)
-    
+
     num_requests = llm_engine.get_num_unfinished_requests()
     pbar = tqdm(total=num_requests, desc="Processed prompts")
 
@@ -84,7 +94,7 @@ def generate(
                 outputs.append(output)
                 pbar.update(1)
         iteration += 1
-    
+
     # llm_engine.stop_profiling()
 
     pbar.close()

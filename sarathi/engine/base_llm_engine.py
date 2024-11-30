@@ -204,7 +204,7 @@ class BaseLLMEngine:
 
     def _init_cache(self) -> None:
         """Profiles the memory usage and initializes the KV cache."""
-        
+
         if self.config.cache_config.num_gpu_blocks is None:
             # Get the maximum number of blocks that can be allocated on GPU.
             num_gpu_blocks_across_workers = self._run_workers(
@@ -220,8 +220,10 @@ class BaseLLMEngine:
             num_gpu_blocks = min(num_gpu_blocks_across_workers)
         else:
             num_gpu_blocks = self.config.cache_config.num_gpu_blocks
-            logger.warning("Using user-provided number of GPU blocks. Skipping profiling!")
-        
+            logger.warning(
+                "Using user-provided number of GPU blocks. Skipping profiling!"
+            )
+
         # FIXME(woosuk): Change to debug log.
         logger.info(f"# GPU blocks: {num_gpu_blocks}")
 
@@ -240,12 +242,16 @@ class BaseLLMEngine:
         #         f"Need {max_blocks_per_request}, available {num_gpu_blocks} gpu blocks. "
         #         f"Try decreasing `max_batch_size`, `max_model_len`."
         #     )
-        
+
         self.config.cache_config.num_gpu_blocks = num_gpu_blocks
 
         if self.config.cache_config.num_cpu_blocks is None:
-            logger.warning("Using the same number of CPU blocks as GPU blocks because CPU was not specified.")
-            self.config.cache_config.num_cpu_blocks = self.config.cache_config.num_gpu_blocks
+            logger.warning(
+                "Using the same number of CPU blocks as GPU blocks because CPU was not specified."
+            )
+            self.config.cache_config.num_cpu_blocks = (
+                self.config.cache_config.num_gpu_blocks
+            )
 
         # Initialize the cache.
         self._run_workers(
@@ -267,7 +273,10 @@ class BaseLLMEngine:
         scheduler_outputs: SchedulerOutputs,
         sampler_outputs: Optional[SamplerOutputs],
     ) -> List[RequestOutput]:
-        ignored_seqs = [self.seq_manager.seq_map[seq_id] for seq_id in scheduler_outputs.ignored_seq_ids]
+        ignored_seqs = [
+            self.seq_manager.seq_map[seq_id]
+            for seq_id in scheduler_outputs.ignored_seq_ids
+        ]
         executed_seqs = [
             self.seq_manager.seq_map[seq_id_metadata.seq_id]
             for seq_id_metadata in scheduler_outputs.scheduled_seq_id_metadata_list
@@ -280,7 +289,10 @@ class BaseLLMEngine:
             )
             self.scheduler.on_step_completed()
 
-        return [RequestOutput.from_decodeable_seq(seq) for seq in ignored_seqs + executed_seqs]
+        return [
+            RequestOutput.from_decodeable_seq(seq)
+            for seq in ignored_seqs + executed_seqs
+        ]
 
     def get_model_config(self) -> ModelConfig:
         return self.config.model_config
@@ -378,7 +390,9 @@ class BaseLLMEngine:
         finished_swap_in_seq_ids = self.notify_socket.recv_pyobj()
 
         if finished_swap_in_seq_ids:
-            print(f"Engine received finished swap in seq ids: {finished_swap_in_seq_ids}")
+            print(
+                f"Engine received finished swap in seq ids: {finished_swap_in_seq_ids}"
+            )
 
         self.scheduler.mark_swap_in_finished(finished_swap_in_seq_ids)
         self.seq_manager.mark_swap_in_finished(finished_swap_in_seq_ids)
@@ -397,7 +411,9 @@ class BaseLLMEngine:
             for i, seqs in enumerate(self.scheduler.decode_queues):
                 print(f"Decode queue: {[seq.seq_id for seq in seqs]}")
 
-        print(f"Running: {[meta.seq_id for meta in scheduler_outputs.scheduled_seq_id_metadata_list]}")
+        print(
+            f"Running: {[meta.seq_id for meta in scheduler_outputs.scheduled_seq_id_metadata_list]}"
+        )
         if scheduler_outputs.swap_out_seq_ids:
             print(f"Swap out: {scheduler_outputs.swap_out_seq_ids}")
         if scheduler_outputs.swap_in_seq_ids:
@@ -490,7 +506,7 @@ class BaseLLMEngine:
         # TODO: support multiple workers
         assert len(worker_metrics) == 1
         self.metrics_store = worker_metrics[0]
-    
+
     def mark_initial_memory_profiling_done(self) -> None:
         self._run_workers("mark_initial_memory_profiling_done")
 
@@ -503,7 +519,7 @@ class BaseLLMEngine:
 
     def stop_profiling(self) -> None:
         self._run_workers("stop_profiling")
-    
+
     def _unbind_zmq_sockets(self):
         self.enqueue_socket.close()
         self.output_socket.close()

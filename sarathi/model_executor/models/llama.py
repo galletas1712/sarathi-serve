@@ -24,6 +24,7 @@
 
 The input of the model is flattened to a 1D tensor of tokens.
 """
+
 from typing import Any, Dict, List, Optional
 
 import torch
@@ -59,7 +60,6 @@ from sarathi.model_executor.attention.cache_engine import KVCache
 
 
 class LlamaMLP(nn.Module):
-
     def __init__(
         self,
         hidden_size: int,
@@ -108,7 +108,6 @@ class LlamaMLP(nn.Module):
 
 
 class LlamaAttention(nn.Module):
-
     def __init__(
         self,
         hidden_size: int,
@@ -189,7 +188,6 @@ class LlamaAttention(nn.Module):
 
 
 class LlamaDecoderLayer(nn.Module):
-
     def __init__(
         self,
         config: LlamaConfig,
@@ -254,7 +252,6 @@ class LlamaDecoderLayer(nn.Module):
 
 
 class LlamaModel(nn.Module):
-
     def __init__(
         self,
         config: LlamaConfig,
@@ -314,7 +311,6 @@ class LlamaModel(nn.Module):
 
 
 class LlamaForCausalLM(nn.Module):
-
     def __init__(
         self,
         config: LlamaConfig,
@@ -435,8 +431,7 @@ class LlamaForCausalLM(nn.Module):
                 param = state_dict[name.replace(weight_name, "qkv_proj")]
 
                 loaded_weight = loaded_weight[
-                    shard_size
-                    * tensor_model_parallel_rank : shard_size
+                    shard_size * tensor_model_parallel_rank : shard_size
                     * (tensor_model_parallel_rank + 1)
                 ]
                 param_slice = param.data[offset : offset + shard_size]
@@ -456,8 +451,7 @@ class LlamaForCausalLM(nn.Module):
 
                 shard_size = param.shape[0] // 2
                 loaded_weight = loaded_weight[
-                    shard_size
-                    * tensor_model_parallel_rank : shard_size
+                    shard_size * tensor_model_parallel_rank : shard_size
                     * (tensor_model_parallel_rank + 1)
                 ]
                 param_slice = param.data[

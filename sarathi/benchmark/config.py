@@ -115,9 +115,7 @@ class ZipfRequestLengthGeneratorConfig(BaseRequestLengthGeneratorConfig):
     scramble: bool = field(
         default=False, metadata={"help": "Whether to scramble the Zipf distribution."}
     )
-    min_tokens: int = field(
-        default=512, metadata={"help": "Minimum number of tokens."}
-    )
+    min_tokens: int = field(default=512, metadata={"help": "Minimum number of tokens."})
     max_tokens: int = field(
         default=16384, metadata={"help": "Maximum number of tokens."}
     )

@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 class CDFSketch:
-
     def __init__(
         self,
         metric_name: str,
@@ -124,7 +123,6 @@ class CDFSketch:
         df.to_csv(f"{path}/{plot_name}.csv", index=False)
 
     def plot_cdf(self, path: str, plot_name: str, x_axis_label: str = None) -> None:
-
         if self.sketch._count == 0:
             return
 

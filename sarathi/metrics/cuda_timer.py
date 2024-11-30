@@ -8,7 +8,6 @@ from sarathi.metrics.metrics_store import MetricsStore
 
 # TODO: come back and enable this
 class CudaTimer:
-
     def __init__(
         self,
         name: OperationMetrics,

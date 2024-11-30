@@ -58,10 +58,11 @@ class CacheEngine:
                     num_blocks,
                     dtype=self.dtype,
                     pin_memory=(device == "cpu"),
-                    device=device)
+                    device=device,
                 )
+            )
         return kv_cache
-    
+
     def begin_swap_in(self, swap_mapping: Dict[str, List[Tuple[int, int]]]) -> None:
         with torch.cuda.stream(self.swap_in_stream):
             for seq_id, src_to_dst in swap_mapping.items():
@@ -71,13 +72,13 @@ class CacheEngine:
                     swap_blocks(self.cpu_cache[i], self.gpu_cache[i], src_to_dst)
                 finish_event.record()
                 self.finish_swap_in_events[seq_id] = finish_event
-    
+
     def swap_in(self, swap_mapping: Dict[str, List[Tuple[int, int]]]) -> None:
         self.begin_swap_in(swap_mapping=swap_mapping)
         self.swap_in_stream.synchronize()
         self.pop_finished_swap_ins()
         assert not self.finish_swap_in_events
-    
+
     def pop_finished_swap_ins(self) -> Tuple[List[str], List[str]]:
         finished_swap_in_seq_ids = []
         logger.debug(f"Swap in events: {list(self.finish_swap_in_events.items())}")
@@ -87,7 +88,7 @@ class CacheEngine:
                 finished_swap_in_seq_ids.append(seq_id)
             else:
                 logger.debug(f"Event for swap in {seq_id} not done")
-        
+
         for seq_id in finished_swap_in_seq_ids:
             del self.finish_swap_in_events[seq_id]
 
@@ -102,7 +103,7 @@ class CacheEngine:
                 swap_blocks(self.gpu_cache[i], self.cpu_cache[i], src_to_dst)
         finish_event.record()
         finish_event.synchronize()
-        
+
     def _get_cache_block(self, num_blocks: int, **kwargs) -> torch.Tensor:
         return torch.empty(
             num_blocks,
@@ -128,7 +129,7 @@ class CacheEngine:
         total = num_layers * (key_cache_block + value_cache_block)
         dtype_size = _get_dtype_size(model_config.dtype)
         return dtype_size * total
-    
+
 
 def _get_dtype_size(dtype: torch.dtype) -> int:
     return torch.tensor([], dtype=dtype).element_size()

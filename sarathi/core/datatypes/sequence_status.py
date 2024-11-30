@@ -15,7 +15,9 @@ class SequenceStatus(enum.Enum):
     FINISHED_IGNORED = enum.auto()
 
     @staticmethod
-    def check_transition(start_status: "SequenceStatus", end_status: "SequenceStatus") -> bool:
+    def check_transition(
+        start_status: "SequenceStatus", end_status: "SequenceStatus"
+    ) -> bool:
         ALLOWED_TRANSITIONS = {
             SequenceStatus.WAITING: [
                 SequenceStatus.RUNNING,
@@ -34,7 +36,7 @@ class SequenceStatus(enum.Enum):
             ],
             SequenceStatus.SWAPPED_OUT: [
                 SequenceStatus.SWAPPED_OUT,  # NOTE: We can keep on evicting more tokens from a request
-                SequenceStatus.SWAPPING_IN, # NOTE: For async swap ins
+                SequenceStatus.SWAPPING_IN,  # NOTE: For async swap ins
                 SequenceStatus.PAUSED,  # NOTE: For synchronous swap ins
             ],
             SequenceStatus.SWAPPING_IN: [
@@ -42,10 +44,12 @@ class SequenceStatus(enum.Enum):
             ],
             SequenceStatus.FINISHED_IGNORED: [],
             SequenceStatus.FINISHED_STOPPED: [],
-            SequenceStatus.FINISHED_LENGTH_CAPPED: []
+            SequenceStatus.FINISHED_LENGTH_CAPPED: [],
         }
-        
-        assert end_status in ALLOWED_TRANSITIONS[start_status], f"Invalid state transition from {start_status} to {end_status}"
+
+        assert (
+            end_status in ALLOWED_TRANSITIONS[start_status]
+        ), f"Invalid state transition from {start_status} to {end_status}"
 
     @staticmethod
     def is_finished(status: "SequenceStatus") -> bool:
@@ -65,11 +69,11 @@ class SequenceStatus(enum.Enum):
     @staticmethod
     def is_waiting(status: "SequenceStatus") -> bool:
         return status == SequenceStatus.WAITING
-    
+
     @staticmethod
     def is_swapping_in(status: "SequenceStatus") -> bool:
         return status == SequenceStatus.SWAPPING_IN
-    
+
     @staticmethod
     def is_swapped_out(status: "SequenceStatus") -> bool:
         return status == SequenceStatus.SWAPPED_OUT
@@ -93,4 +97,3 @@ class SequenceStatus(enum.Enum):
         else:
             finish_reason = None
         return finish_reason
-

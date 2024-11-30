@@ -13,7 +13,6 @@ T = TypeVar("T")
 
 
 class Counter:
-
     def __init__(self, start: int = 0) -> None:
         self.counter = start
 

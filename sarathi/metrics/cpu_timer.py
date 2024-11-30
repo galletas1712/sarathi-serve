@@ -9,7 +9,6 @@ from sarathi.metrics.metrics_store import MetricsStore
 
 # TODO: come back and enable this
 class CpuTimer:
-
     def __init__(self, name: CpuOperationMetrics, rank: Optional[int] = None):
         self.name = name
         self.start_time = None

@@ -1,10 +1,10 @@
 """
-    Automated search for capacity for different systems via latency vs qps data.
-    A system is characterized by:
-    1. trace
-    2. model
-    3. parallel spec
-    4. scheduler
+Automated search for capacity for different systems via latency vs qps data.
+A system is characterized by:
+1. trace
+2. model
+3. parallel spec
+4. scheduler
 """
 
 import argparse

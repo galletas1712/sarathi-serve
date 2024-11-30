@@ -9,7 +9,6 @@ from sarathi.utils.transformers.tokenizer import detokenize_incrementally
 
 
 class EngineSequenceManager(BaseSequenceManager):
-
     def __init__(
         self,
         tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],

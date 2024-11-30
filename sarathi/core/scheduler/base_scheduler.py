@@ -12,7 +12,6 @@ logger = init_logger(__name__)
 
 
 class BaseScheduler(ABC):
-
     def __init__(
         self,
         model_config: ModelConfig,
@@ -65,7 +64,13 @@ class BaseScheduler(ABC):
         return self.get_num_unfinished_seqs() > 0
 
     def get_num_unfinished_seqs(self) -> int:
-        return len(self.waiting) + len(self.running) + len(self.swapped_out) + len(self.swapping_in) + len(self.swapped_in)
+        return (
+            len(self.waiting)
+            + len(self.running)
+            + len(self.swapped_out)
+            + len(self.swapping_in)
+            + len(self.swapped_in)
+        )
 
     @abstractmethod
     def _schedule(self) -> SchedulerOutputs:
@@ -92,7 +97,7 @@ class BaseScheduler(ABC):
 
         if not scheduler_outputs.is_empty():
             self.num_running_batches += 1
-        
+
         return scheduler_outputs
 
     def free_finished_seqs(self) -> None:
@@ -110,7 +115,7 @@ class BaseScheduler(ABC):
             logger.debug(f"Sequence {seq_id} has finished swapping in")
             seq = self.swapping_in[seq_id]
             self._finish_swap_in(seq)
-        
+
     def _allocate(self, seq: Sequence) -> None:
         self.block_manager.allocate(seq)
 
@@ -132,7 +137,7 @@ class BaseScheduler(ABC):
         seq.check_transition(SequenceStatus.WAITING)
         self._free_seq(seq)
         self.waiting.insert(0, seq)
-    
+
     def _begin_swap_in(self, seq: Sequence) -> None:
         seq.check_transition(SequenceStatus.SWAPPING_IN)
         del self.swapped_out[seq.seq_id]
@@ -140,13 +145,13 @@ class BaseScheduler(ABC):
         self.block_manager.begin_swap_in(seq.seq_id)
         if not self.cache_config.async_swap_in:
             self._finish_swap_in(seq)
-    
+
     def _finish_swap_in(self, seq: Sequence) -> None:
         seq.check_transition(SequenceStatus.PAUSED)
         del self.swapping_in[seq.seq_id]
         self.swapped_in[seq.seq_id] = seq
         self.block_manager.finish_swap_in(seq.seq_id)
-    
+
     def _swap_in(self, seq: Sequence):
         # TODO: state transition check
         if self.cache_config.async_swap_in:
@@ -157,14 +162,20 @@ class BaseScheduler(ABC):
             # NOTE: No adding to swapped_in!
             self.block_manager.swap_in(seq.seq_id)
 
-    def _swap_out(self, seq: Sequence, num_blocks_to_swap: Optional[int] = None) -> None:
+    def _swap_out(
+        self, seq: Sequence, num_blocks_to_swap: Optional[int] = None
+    ) -> None:
         seq.check_transition(SequenceStatus.SWAPPED_OUT)
         if seq.seq_id in self.swapped_in:
-            logger.warning(f"Sequence {seq.seq_id} to swap in was recently swapped out and not yet made progress")
-            del self.swapped_in[seq.seq_id]  # NOTE: Maybe we didn't remove from swapped_in queue properly
+            logger.warning(
+                f"Sequence {seq.seq_id} to swap in was recently swapped out and not yet made progress"
+            )
+            del self.swapped_in[
+                seq.seq_id
+            ]  # NOTE: Maybe we didn't remove from swapped_in queue properly
         self.block_manager.swap_out(seq.seq_id, num_blocks_to_swap)
         self.swapped_out[seq.seq_id] = seq
-    
+
     def _check_request_prompt_length(self, seq: Sequence) -> bool:
         if seq.get_prompt_len() > self.prompt_limit:
             logger.warning(

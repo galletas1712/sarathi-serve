@@ -21,6 +21,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Rotary Positional Embeddings."""
+
 import math
 from typing import Any, Dict, Optional, Tuple, Union
 
@@ -315,9 +316,11 @@ class Llama3RotaryEmbedding(RotaryEmbedding):
     ) -> None:
         self.scaling_factor = scaling_factor
         self.low_freq_factor = low_freq_factor
-        self.high_freq_factor = high_freq_factor    
+        self.high_freq_factor = high_freq_factor
         self.old_context_len = old_context_len
-        super().__init__(head_size, rotary_dim, max_position_embeddings, base, is_neox_style)
+        super().__init__(
+            head_size, rotary_dim, max_position_embeddings, base, is_neox_style
+        )
 
     def _compute_cos_sin_cache(self) -> torch.Tensor:
         """Compute the cos and sin cache."""
@@ -335,8 +338,12 @@ class Llama3RotaryEmbedding(RotaryEmbedding):
                 new_freqs.append(freq / self.scaling_factor)
             else:
                 assert low_freq_wavelen != high_freq_wavelen
-                smooth = (self.old_context_len / wavelen - self.low_freq_factor) / (self.high_freq_factor - self.low_freq_factor)
-                new_freqs.append((1 - smooth) * freq / self.scaling_factor + smooth * freq)
+                smooth = (self.old_context_len / wavelen - self.low_freq_factor) / (
+                    self.high_freq_factor - self.low_freq_factor
+                )
+                new_freqs.append(
+                    (1 - smooth) * freq / self.scaling_factor + smooth * freq
+                )
         inv_freq = torch.tensor(new_freqs, dtype=inv_freq.dtype, device=inv_freq.device)
 
         t = torch.arange(self.max_position_embeddings, dtype=torch.float, device="cuda")
@@ -360,7 +367,11 @@ def get_rope(
             head_size, rotary_dim, max_position, base, is_neox_style
         )
     else:
-        scaling_type = rope_scaling["type"] if "type" in rope_scaling else rope_scaling["rope_type"]
+        scaling_type = (
+            rope_scaling["type"]
+            if "type" in rope_scaling
+            else rope_scaling["rope_type"]
+        )
         scaling_factor = rope_scaling["factor"]
         if scaling_type == "linear":
             rotary_emb = LinearScalingRotaryEmbedding(

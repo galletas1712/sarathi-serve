@@ -18,7 +18,6 @@ logger = init_logger(__name__)
 
 
 class SarathiScheduler(BaseScheduler):
-
     def __init__(
         self,
         model_config: ModelConfig,
@@ -72,10 +71,7 @@ class SarathiScheduler(BaseScheduler):
 
         if self.enable_dynamic_chunking_schedule:
             request_stage_idx = int(
-                np.ceil(
-                    seq.get_num_prompt_tokens_processed()
-                    // self._tokens_per_stage
-                )
+                np.ceil(seq.get_num_prompt_tokens_processed() // self._tokens_per_stage)
             )
             assert request_stage_idx < len(self._chunk_sizes)
             chunk_size = self._chunk_sizes[request_stage_idx]
@@ -115,7 +111,9 @@ class SarathiScheduler(BaseScheduler):
         # to keep all the sequence groups in the RUNNING state.
         # In this case, the policy is responsible for deciding which sequence
         # groups to preempt.
-        self.running = sorted(self.running, key=lambda seq: now - seq.arrival_time, reverse=True)
+        self.running = sorted(
+            self.running, key=lambda seq: now - seq.arrival_time, reverse=True
+        )
 
         # in first pass process all the requests with prefill completed
         # this allows us to accurately account for the number of decode tokens

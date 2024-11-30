@@ -14,9 +14,18 @@ from sarathi.core.datatypes.sequence import Sequence, SequenceExecutionMetadata
 from sarathi.engine.llm_engine import BaseLLMEngine
 from sarathi.metrics.metrics_store import MetricsStore
 from sarathi.model_executor.attention.cache_engine import CacheEngine
-from sarathi.config.config import BaseEndpointConfig, ReplicaConfig, RollingPreemptionProfilingSchedulerConfig
-from sarathi.model_executor.attention import get_attention_wrapper, set_attention_backend
-from sarathi.model_executor.parallel_utils.parallel_state import initialize_model_parallel
+from sarathi.config.config import (
+    BaseEndpointConfig,
+    ReplicaConfig,
+    RollingPreemptionProfilingSchedulerConfig,
+)
+from sarathi.model_executor.attention import (
+    get_attention_wrapper,
+    set_attention_backend,
+)
+from sarathi.model_executor.parallel_utils.parallel_state import (
+    initialize_model_parallel,
+)
 from dataclasses import dataclass
 
 from sarathi.model_executor.model_runner import ModelRunner
@@ -31,18 +40,19 @@ NUM_PASSES = 10
 
 benchmark_config = BenchmarkConfig.create_from_cli_args()
 replica_config = ReplicaConfig(
-    0,
-    benchmark_config.output_dir,
-    [('node:172.19.128.82', 0)]
+    0, benchmark_config.output_dir, [("node:172.19.128.82", 0)]
 )
 import os
-os.environ['MASTER_ADDR'] = '127.0.0.1'
-os.environ['MASTER_PORT'] = '29500'
-torch.distributed.init_process_group(backend='nccl', rank=0, world_size=1)
+
+os.environ["MASTER_ADDR"] = "127.0.0.1"
+os.environ["MASTER_PORT"] = "29500"
+torch.distributed.init_process_group(backend="nccl", rank=0, world_size=1)
 initialize_model_parallel()
 
 system_config = BaseEndpointConfig().create_system_config(replica_config)
-system_config.cache_config.num_gpu_blocks = 21000 # Some random high number from previous profiles
+system_config.cache_config.num_gpu_blocks = (
+    21000  # Some random high number from previous profiles
+)
 system_config.cache_config.num_cpu_blocks = 4096
 set_attention_backend("flashinfer")
 MetricsStore.get_or_create_instance(
@@ -50,11 +60,12 @@ MetricsStore.get_or_create_instance(
     system_config.model_config,
     system_config.metrics_config,
 )
-model_runner = ModelRunner(config=system_config, device=torch.device('cuda'), rank=0)
+model_runner = ModelRunner(config=system_config, device=torch.device("cuda"), rank=0)
 model_runner.sampler = None
 cache_engine = CacheEngine(config=system_config)
 
 vocab_size = model_runner.model.config.vocab_size
+
 
 @dataclass
 class BenchmarkDim:
@@ -77,7 +88,7 @@ for max_num_batched_tokens in [262144]:
                         max_num_batched_tokens=max_num_batched_tokens,
                         num_decode_iters=num_decode_iters,
                         num_blocks_swap_out=num_blocks_swap_out,
-                        num_blocks_swap_in=0
+                        num_blocks_swap_in=0,
                     )
                 )
             for num_blocks_swap_in in [2048, 1024, 512, 256, 128, 64]:
@@ -87,30 +98,30 @@ for max_num_batched_tokens in [262144]:
                         max_num_batched_tokens=max_num_batched_tokens,
                         num_decode_iters=num_decode_iters,
                         num_blocks_swap_out=0,
-                        num_blocks_swap_in=num_blocks_swap_in
+                        num_blocks_swap_in=num_blocks_swap_in,
                     )
                 )
             for num_blocks in [1024, 512, 256, 128, 64]:
-                    benchmark_dims.append(
-                        BenchmarkDim(
-                            batch_size=batch_size,
-                            max_num_batched_tokens=max_num_batched_tokens,
-                            num_decode_iters=num_decode_iters,
-                            num_blocks_swap_out=num_blocks,
-                            num_blocks_swap_in=num_blocks
-                        )
+                benchmark_dims.append(
+                    BenchmarkDim(
+                        batch_size=batch_size,
+                        max_num_batched_tokens=max_num_batched_tokens,
+                        num_decode_iters=num_decode_iters,
+                        num_blocks_swap_out=num_blocks,
+                        num_blocks_swap_in=num_blocks,
                     )
+                )
             benchmark_dims.append(
                 BenchmarkDim(
                     batch_size=batch_size,
                     max_num_batched_tokens=max_num_batched_tokens,
                     num_decode_iters=num_decode_iters,
                     num_blocks_swap_out=0,
-                    num_blocks_swap_in=0
+                    num_blocks_swap_in=0,
                 )
             )
 
-            
+
 dfs = []
 for benchmark_dim in benchmark_dims:
     print("Profiling with benchmark dim:", benchmark_dim)
@@ -124,7 +135,9 @@ for benchmark_dim in benchmark_dims:
 
     assert benchmark_dim.max_num_batched_tokens % benchmark_dim.batch_size == 0
     seq_len = benchmark_dim.max_num_batched_tokens // benchmark_dim.batch_size
-    num_blocks_per_seq = (seq_len + cache_engine.block_size - 1) // cache_engine.block_size
+    num_blocks_per_seq = (
+        seq_len + cache_engine.block_size - 1
+    ) // cache_engine.block_size
 
     seq_exec_metadata_list = []
     for seq_id in range(benchmark_dim.batch_size):
@@ -139,7 +152,9 @@ for benchmark_dim in benchmark_dims:
         )
 
         block_table_start = seq_id * num_blocks_per_seq
-        block_table = list(range(block_table_start, block_table_start + num_blocks_per_seq))
+        block_table = list(
+            range(block_table_start, block_table_start + num_blocks_per_seq)
+        )
 
         seq_exec_metadata = SequenceExecutionMetadata(
             seq=seq,
@@ -147,25 +162,38 @@ for benchmark_dim in benchmark_dims:
             prompt_chunk_len=0,
         )
         seq_exec_metadata_list.append(seq_exec_metadata)
-    
+
     num_blocks_active = num_blocks_per_seq * benchmark_dim.batch_size
-    assert num_blocks_active + benchmark_dim.num_blocks_swap_out + benchmark_dim.num_blocks_swap_in <= cache_engine.num_gpu_blocks
-    assert benchmark_dim.num_blocks_swap_out + benchmark_dim.num_blocks_swap_in <= cache_engine.num_cpu_blocks
+    assert (
+        num_blocks_active
+        + benchmark_dim.num_blocks_swap_out
+        + benchmark_dim.num_blocks_swap_in
+        <= cache_engine.num_gpu_blocks
+    )
+    assert (
+        benchmark_dim.num_blocks_swap_out + benchmark_dim.num_blocks_swap_in
+        <= cache_engine.num_cpu_blocks
+    )
 
     swap_out_gpu_region = (
         num_blocks_active + benchmark_dim.num_blocks_swap_out,
-        num_blocks_active + benchmark_dim.num_blocks_swap_out * 2
+        num_blocks_active + benchmark_dim.num_blocks_swap_out * 2,
     )
 
     swap_in_gpu_region = (
-        num_blocks_active + benchmark_dim.num_blocks_swap_out * 2 + benchmark_dim.num_blocks_swap_in,
-        num_blocks_active + benchmark_dim.num_blocks_swap_out * 2 + benchmark_dim.num_blocks_swap_in * 2)
+        num_blocks_active
+        + benchmark_dim.num_blocks_swap_out * 2
+        + benchmark_dim.num_blocks_swap_in,
+        num_blocks_active
+        + benchmark_dim.num_blocks_swap_out * 2
+        + benchmark_dim.num_blocks_swap_in * 2,
+    )
 
     swap_out_cpu_region = (0, benchmark_dim.num_blocks_swap_out)
 
     swap_in_cpu_region = (
         benchmark_dim.num_blocks_swap_out * 2,
-        benchmark_dim.num_blocks_swap_out * 2 + benchmark_dim.num_blocks_swap_in
+        benchmark_dim.num_blocks_swap_out * 2 + benchmark_dim.num_blocks_swap_in,
     )
     # swap_out_mapping = [
     #     (num_blocks_active + i, i) for i in range(benchmark_dim.num_blocks_swap_out)
@@ -180,13 +208,31 @@ for benchmark_dim in benchmark_dims:
     print("Swap in GPU region:", swap_in_gpu_region)
     print("Swap out CPU region:", swap_out_cpu_region)
     print("Swap in CPU region:", swap_in_cpu_region)
-    print("Min GPU block in sequence:", [min(seq_exec_metadata.block_table) for seq_exec_metadata in seq_exec_metadata_list])
-    print("Max GPU block in sequence:", [max(seq_exec_metadata.block_table) for seq_exec_metadata in seq_exec_metadata_list])
-    print("Number of unique GPU blocks in sequence:", [len(set(seq_exec_metadata.block_table)) for seq_exec_metadata in seq_exec_metadata_list])
+    print(
+        "Min GPU block in sequence:",
+        [
+            min(seq_exec_metadata.block_table)
+            for seq_exec_metadata in seq_exec_metadata_list
+        ],
+    )
+    print(
+        "Max GPU block in sequence:",
+        [
+            max(seq_exec_metadata.block_table)
+            for seq_exec_metadata in seq_exec_metadata_list
+        ],
+    )
+    print(
+        "Number of unique GPU blocks in sequence:",
+        [
+            len(set(seq_exec_metadata.block_table))
+            for seq_exec_metadata in seq_exec_metadata_list
+        ],
+    )
 
     swap_out_stream = torch.cuda.Stream()
     swap_in_stream = torch.cuda.Stream()
-    
+
     pass_latencies = []
     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
         torch.cuda.cudart().cudaProfilerStart()
@@ -201,7 +247,7 @@ for benchmark_dim in benchmark_dims:
                 # NOTE: This isn't really realistic, but since we aren't adding any tokens it should be fine
                 with record_function("Begin forward"):
                     get_attention_wrapper().begin_forward(seq_exec_metadata_list)
-                
+
                 swap_out_start_event = torch.cuda.Event(enable_timing=True)
                 swap_out_end_event = torch.cuda.Event(enable_timing=True)
                 swap_in_start_event = torch.cuda.Event(enable_timing=True)
@@ -210,26 +256,44 @@ for benchmark_dim in benchmark_dims:
                 for i in range(benchmark_dim.num_decode_iters):
                     with record_function(f"Decode Iter {i}"):
                         with record_function("Prepare inputs"):
-                            input_tokens, input_positions = model_runner._prepare_inputs(seq_exec_metadata_list)
+                            input_tokens, input_positions = (
+                                model_runner._prepare_inputs(seq_exec_metadata_list)
+                            )
 
                         if i == 0:
                             if benchmark_dim.num_blocks_swap_out > 0:
                                 with torch.cuda.stream(swap_out_stream):
                                     swap_out_start_event.record()
                                     for layer in range(cache_engine.num_layers):
-                                        cache_engine.cpu_cache[layer][swap_out_cpu_region[0]:swap_out_cpu_region[1]].copy_(
-                                            cache_engine.gpu_cache[layer][swap_out_gpu_region[0]:swap_out_gpu_region[1]],
-                                            non_blocking=True
+                                        cache_engine.cpu_cache[layer][
+                                            swap_out_cpu_region[
+                                                0
+                                            ] : swap_out_cpu_region[1]
+                                        ].copy_(
+                                            cache_engine.gpu_cache[layer][
+                                                swap_out_gpu_region[
+                                                    0
+                                                ] : swap_out_gpu_region[1]
+                                            ],
+                                            non_blocking=True,
                                         )
                                     swap_out_end_event.record()
-                            
+
                             if benchmark_dim.num_blocks_swap_in > 0:
                                 with torch.cuda.stream(swap_in_stream):
                                     swap_in_start_event.record()
                                     for layer in range(cache_engine.num_layers):
-                                        cache_engine.gpu_cache[layer][swap_in_gpu_region[0]:swap_in_gpu_region[1]].copy_(
-                                            cache_engine.cpu_cache[layer][swap_in_cpu_region[0]:swap_in_cpu_region[1]],
-                                            non_blocking=True
+                                        cache_engine.gpu_cache[layer][
+                                            swap_in_gpu_region[0] : swap_in_gpu_region[
+                                                1
+                                            ]
+                                        ].copy_(
+                                            cache_engine.cpu_cache[layer][
+                                                swap_in_cpu_region[
+                                                    0
+                                                ] : swap_in_cpu_region[1]
+                                            ],
+                                            non_blocking=True,
                                         )
                                     swap_in_end_event.record()
 
@@ -237,10 +301,10 @@ for benchmark_dim in benchmark_dims:
                         model_runner.model.forward(
                             hidden_states=input_tokens,
                             positions=input_positions,
-                            kv_caches=cache_engine.gpu_cache
+                            kv_caches=cache_engine.gpu_cache,
                         )
                         torch.cuda.nvtx.range_pop()
-                
+
                 with record_function("End forward"):
                     get_attention_wrapper().end_forward()
 
@@ -253,24 +317,40 @@ for benchmark_dim in benchmark_dims:
                 print(f"Pass {pass_num - NUM_WARMUP_PASSES} latency: {pass_latency} ms")
 
                 if benchmark_dim.num_blocks_swap_out > 0:
-                    swap_out_times.append(swap_out_start_event.elapsed_time(swap_out_end_event))
+                    swap_out_times.append(
+                        swap_out_start_event.elapsed_time(swap_out_end_event)
+                    )
 
                 if benchmark_dim.num_blocks_swap_in > 0:
-                    swap_in_times.append(swap_in_start_event.elapsed_time(swap_in_end_event))
+                    swap_in_times.append(
+                        swap_in_start_event.elapsed_time(swap_in_end_event)
+                    )
 
         torch.cuda.cudart().cudaProfilerStop()
-    
-    df = pd.DataFrame({
-        "batch_size": [benchmark_dim.batch_size],
-        "max_num_batched_tokens": [benchmark_dim.max_num_batched_tokens],
-        "num_decode_iters": [benchmark_dim.num_decode_iters],
-        "num_blocks_swap_out": [benchmark_dim.num_blocks_swap_out],
-        "num_blocks_swap_in": [benchmark_dim.num_blocks_swap_in],
-        "total_latency": [sum(pass_latencies) / NUM_PASSES],
-        "decode_latency": [sum(pass_latencies) / NUM_PASSES / benchmark_dim.num_decode_iters],
-        "average_swap_out_latency": [sum(swap_out_times) / len(swap_out_times) if len(swap_out_times) > 0 else None],
-        "average_swap_in_latency": [sum(swap_in_times) / len(swap_in_times) if len(swap_in_times) > 0 else None],
-    })
+
+    df = pd.DataFrame(
+        {
+            "batch_size": [benchmark_dim.batch_size],
+            "max_num_batched_tokens": [benchmark_dim.max_num_batched_tokens],
+            "num_decode_iters": [benchmark_dim.num_decode_iters],
+            "num_blocks_swap_out": [benchmark_dim.num_blocks_swap_out],
+            "num_blocks_swap_in": [benchmark_dim.num_blocks_swap_in],
+            "total_latency": [sum(pass_latencies) / NUM_PASSES],
+            "decode_latency": [
+                sum(pass_latencies) / NUM_PASSES / benchmark_dim.num_decode_iters
+            ],
+            "average_swap_out_latency": [
+                sum(swap_out_times) / len(swap_out_times)
+                if len(swap_out_times) > 0
+                else None
+            ],
+            "average_swap_in_latency": [
+                sum(swap_in_times) / len(swap_in_times)
+                if len(swap_in_times) > 0
+                else None
+            ],
+        }
+    )
     dfs.append(df)
     df.to_csv(csv_file, index=False)
     prof.export_chrome_trace(trace_file)

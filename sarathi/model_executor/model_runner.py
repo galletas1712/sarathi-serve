@@ -20,7 +20,6 @@ logger = init_logger(__name__)
 
 
 class ModelRunner:
-
     def __init__(
         self,
         config: SystemConfig,
@@ -199,7 +198,9 @@ class ModelRunner:
         cache_block_size = CacheEngine.get_cache_block_size(
             block_size, self.config.model_config, self.config.parallel_config
         )
-        print(f"Cache size per token: {cache_block_size / block_size}, Cache block size: {cache_block_size}, Block size: {block_size}")
+        print(
+            f"Cache size per token: {cache_block_size / block_size}, Cache block size: {cache_block_size}, Block size: {block_size}"
+        )
         num_gpu_blocks = int(
             (total_gpu_memory * gpu_memory_utilization - peak_memory)
             // cache_block_size
@@ -217,12 +218,12 @@ class ModelRunner:
     def run(
         self,
         seq_exec_metadata_list: List[SequenceExecutionMetadata],
-        duplicate_mapping: Optional[List[Tuple[int, int]]] = None
+        duplicate_mapping: Optional[List[Tuple[int, int]]] = None,
     ) -> torch.Tensor:
         # Prepare input tensors.
         with self._prepare_inputs_e2e_timer:
             input_tokens, input_positions = self._prepare_inputs(seq_exec_metadata_list)
-        
+
         if self.config.cache_config.duplicate_kv_cache:
             assert duplicate_mapping is not None
 

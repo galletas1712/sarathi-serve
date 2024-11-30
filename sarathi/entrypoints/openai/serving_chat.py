@@ -54,7 +54,6 @@ class ChatMessageParseResult:
 
 
 class OpenAIServingChat(OpenAIServing):
-
     def __init__(
         self,
         engine: AsyncLLMEngine,
@@ -345,7 +344,6 @@ class OpenAIServingChat(OpenAIServing):
         request_id: str,
         conversation: List[ConversationMessage],
     ) -> Union[ErrorResponse, ChatCompletionResponse]:
-
         model_name = self.served_model_names[0]
         created_time = int(time.time())
         final_res: Optional[RequestOutput] = None

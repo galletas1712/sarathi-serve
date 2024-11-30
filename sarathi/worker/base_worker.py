@@ -19,7 +19,10 @@ from sarathi.core.sequence_manager.worker_sequence_manager import WorkerSequence
 from sarathi.logger import init_logger
 from sarathi.metrics.alt_metrics_store import WorkerMetricsStore
 from sarathi.model_executor.utils import set_random_seed
-from sarathi.model_executor.attention import get_attention_wrapper, set_attention_backend
+from sarathi.model_executor.attention import (
+    get_attention_wrapper,
+    set_attention_backend,
+)
 from sarathi.model_executor.model_runner import ModelRunner
 from sarathi.model_executor.parallel_utils.parallel_state import (
     get_pipeline_model_parallel_rank,
@@ -63,7 +66,9 @@ class BaseWorker:
         set_attention_backend(config.worker_config.attention_backend)
 
         self._verify_parallel_config()
-        self.metrics_store = WorkerMetricsStore(isinstance(config.scheduler_config, DisaggEmulationSchedulerConfig))
+        self.metrics_store = WorkerMetricsStore(
+            isinstance(config.scheduler_config, DisaggEmulationSchedulerConfig)
+        )
 
         self._init_zmq_sockets()
 
@@ -177,11 +182,12 @@ class BaseWorker:
         self.seq_manager.on_schedule(scheduler_outputs)
 
         # This will actually extract the block tables
-        seq_exec_metadata_list = self.seq_manager.get_seq_exec_metadata_list(scheduler_outputs)
-        
+        seq_exec_metadata_list = self.seq_manager.get_seq_exec_metadata_list(
+            scheduler_outputs
+        )
+
         self.metrics_store.on_batch_scheduled(
-            batch_id=self.curr_batch_id,
-            seq_exec_metadata_list=seq_exec_metadata_list
+            batch_id=self.curr_batch_id, seq_exec_metadata_list=seq_exec_metadata_list
         )
 
         # NOTE: Ordering of which ones are swapped out first
@@ -189,11 +195,18 @@ class BaseWorker:
         # This will wait for swap outs to finish
         if not self.config.cache_config.duplicate_kv_cache:
             # NOTE: We don't actually perform the cache swap out operation, since it's already all stored in host memory
-            swap_out_mappings = self.seq_manager.get_swap_out_mappings(scheduler_outputs.swap_out_seq_ids)
+            swap_out_mappings = self.seq_manager.get_swap_out_mappings(
+                scheduler_outputs.swap_out_seq_ids
+            )
             now = time.perf_counter()
             for i, (seq_id, mapping) in enumerate(swap_out_mappings.items()):
-                assert not scheduler_outputs.swap_out_lens or len(mapping) == scheduler_outputs.swap_out_lens[i]
-                self.metrics_store.on_swap_out_start(seq_id, len(mapping), start_timestamp=now)
+                assert (
+                    not scheduler_outputs.swap_out_lens
+                    or len(mapping) == scheduler_outputs.swap_out_lens[i]
+                )
+                self.metrics_store.on_swap_out_start(
+                    seq_id, len(mapping), start_timestamp=now
+                )
             get_attention_wrapper().cache_engine.swap_out(swap_out_mappings)
         else:
             now = time.perf_counter()
@@ -201,11 +214,19 @@ class BaseWorker:
                 if scheduler_outputs.swap_out_lens:
                     num_blocks = scheduler_outputs.swap_out_lens[i]
                 else:
-                    num_blocks = self.seq_manager.block_manager.get_seq_num_blocks_allocated(seq_id, BlockDevice.GPU)
-                self.metrics_store.on_swap_out_start(seq_id, num_blocks, start_timestamp=now)
-        
+                    num_blocks = (
+                        self.seq_manager.block_manager.get_seq_num_blocks_allocated(
+                            seq_id, BlockDevice.GPU
+                        )
+                    )
+                self.metrics_store.on_swap_out_start(
+                    seq_id, num_blocks, start_timestamp=now
+                )
+
         # Perform async swap in after sync swap out
-        swap_in_mappings = self.seq_manager.get_swap_in_mappings(scheduler_outputs.swap_in_seq_ids)
+        swap_in_mappings = self.seq_manager.get_swap_in_mappings(
+            scheduler_outputs.swap_in_seq_ids
+        )
         now = time.perf_counter()
         for seq_id in swap_in_mappings.keys():
             self.metrics_store.on_swap_in_start(seq_id, start_timestamp=now)
@@ -222,26 +243,37 @@ class BaseWorker:
             assert not scheduler_outputs.is_empty()  # Superset
             # print(f"Iteration: {self.curr_batch_id}, executing model!")
             # NOTE: Under KV cache duplication, model_runner is responsible for pipelining KV cache out to swap
-            scheduled_seqs = [seq_exec_metadata.seq for seq_exec_metadata in seq_exec_metadata_list]
-            seq_num_tokens = [seq_exec_metadata.num_tokens for seq_exec_metadata in seq_exec_metadata_list]
+            scheduled_seqs = [
+                seq_exec_metadata.seq for seq_exec_metadata in seq_exec_metadata_list
+            ]
+            seq_num_tokens = [
+                seq_exec_metadata.num_tokens
+                for seq_exec_metadata in seq_exec_metadata_list
+            ]
             sampler_outputs = self.model_runner.run(
                 seq_exec_metadata_list,
                 duplicate_mapping=(
-                    self.seq_manager.block_manager.get_duplicate_mapping(scheduled_seqs, seq_num_tokens)
+                    self.seq_manager.block_manager.get_duplicate_mapping(
+                        scheduled_seqs, seq_num_tokens
+                    )
                     if self.config.cache_config.duplicate_kv_cache
                     else None
-                )
+                ),
             )
             # print(f"Iteration: {self.curr_batch_id}, model executed!")
         else:
             # print(f"Iteration: {self.curr_batch_id}, no seq_exec_metadata_list!")
             sampler_outputs = []
 
-        finished_seq_ids = self.seq_manager.on_step_completed(scheduler_outputs, sampler_outputs)
+        finished_seq_ids = self.seq_manager.on_step_completed(
+            scheduler_outputs, sampler_outputs
+        )
 
         # print(f"Iteration: {self.curr_batch_id}, before synchronize @ end of iteration")
         torch.cuda.current_stream().synchronize()
-        self.metrics_store.on_batch_end(batch_id=self.curr_batch_id, finished_seq_ids=finished_seq_ids)
+        self.metrics_store.on_batch_end(
+            batch_id=self.curr_batch_id, finished_seq_ids=finished_seq_ids
+        )
 
         self.curr_batch_id += 1
 
@@ -255,14 +287,18 @@ class BaseWorker:
 
         while True:
             logger.debug(f"Iteration: {self.curr_batch_id}")
-            finished_swap_in_seq_ids = get_attention_wrapper().cache_engine.pop_finished_swap_ins()
+            finished_swap_in_seq_ids = (
+                get_attention_wrapper().cache_engine.pop_finished_swap_ins()
+            )
 
             now = time.perf_counter()
             for seq_id in finished_swap_in_seq_ids:
                 self.metrics_store.on_swap_in_end(seq_id, end_timestamp=now)
 
             if finished_swap_in_seq_ids:
-                logger.debug(f"Iteration {self.curr_batch_id}: WORKER SAID FINISHED SWAPPING IN {finished_swap_in_seq_ids}")
+                logger.debug(
+                    f"Iteration {self.curr_batch_id}: WORKER SAID FINISHED SWAPPING IN {finished_swap_in_seq_ids}"
+                )
 
             self.seq_manager.mark_swap_in_finished(finished_swap_in_seq_ids)
             self.notify_socket.send_pyobj(finished_swap_in_seq_ids)
@@ -270,7 +306,9 @@ class BaseWorker:
             start_engine_scheduler = time.perf_counter()
             step_inputs = self.enqueue_socket.recv_pyobj()
             end_engine_scheduler = time.perf_counter()
-            self.metrics_store.add_engine_scheduler_latency(end_engine_scheduler - start_engine_scheduler)
+            self.metrics_store.add_engine_scheduler_latency(
+                end_engine_scheduler - start_engine_scheduler
+            )
 
             if step_inputs is None:
                 continue
@@ -321,10 +359,12 @@ class BaseWorker:
     @synchronized
     def stop_profiling(self) -> None:
         self.profiler.__exit__(None, None, None)
-        trace_path = Path(f"{self.config.replica_config.output_dir}/profiler_trace_rank_{self.rank}.json")
+        trace_path = Path(
+            f"{self.config.replica_config.output_dir}/profiler_trace_rank_{self.rank}.json"
+        )
         trace_path.parent.mkdir(parents=True, exist_ok=True)
         self.profiler.export_chrome_trace(str(trace_path))
-    
+
 
 def _init_distributed_environment(
     parallel_config: ParallelConfig,

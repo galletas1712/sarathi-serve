@@ -108,7 +108,9 @@ def _prune_hidden_states(
     return hidden_states.index_select(0, last_token_indices)
 
 
-def _get_temperatures(seq_exec_metadata_list: List[SequenceExecutionMetadata]) -> List[float]:
+def _get_temperatures(
+    seq_exec_metadata_list: List[SequenceExecutionMetadata],
+) -> List[float]:
     # Collect the temperatures for the logits.
     temperatures: List[float] = []
     for seq_exec_metadata in seq_exec_metadata_list:

@@ -49,7 +49,7 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
         self.append_kv_last_page_len_tensor = None
 
         self.duplicate_stream = torch.cuda.Stream(device)
-        
+
     def to_int_tensor(self, data: List[int]) -> torch.Tensor:
         return torch.tensor(data, dtype=torch.int32, device="cuda")
 
@@ -118,7 +118,9 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
             # NOTE: We don't assert the block table to be equal to number of blocks in use in prefill
             # because we allocated the full sequence at the start.
 
-            prefill_kv_page_indices.extend(seq_exec_metadata.block_table[:num_blocks_in_use])
+            prefill_kv_page_indices.extend(
+                seq_exec_metadata.block_table[:num_blocks_in_use]
+            )
             prefill_kv_page_indptr.append(
                 prefill_kv_page_indptr[-1] + num_blocks_in_use
             )
@@ -142,7 +144,9 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
             # Compute the kv page indices for the prompt tokens.
             num_blocks_in_use = (context_len + self.block_size - 1) // self.block_size
 
-            assert num_blocks_in_use == seq_exec_metadata.seq.get_num_logical_blocks(), (
+            assert (
+                num_blocks_in_use == seq_exec_metadata.seq.get_num_logical_blocks()
+            ), (
                 f"Number of blocks in use {num_blocks_in_use} does not match the number of logical blocks "
                 f"{seq_exec_metadata.seq.get_num_logical_blocks()}"
             )
@@ -151,7 +155,9 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
                 f"{len(seq_exec_metadata.block_table)}"
             )
 
-            decode_kv_page_indices.extend(seq_exec_metadata.block_table[:num_blocks_in_use])
+            decode_kv_page_indices.extend(
+                seq_exec_metadata.block_table[:num_blocks_in_use]
+            )
             decode_kv_page_indptr.append(decode_kv_page_indptr[-1] + num_blocks_in_use)
             decode_kv_last_page_len.append(
                 context_len % self.block_size or self.block_size
@@ -200,7 +206,9 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
         )
 
         if duplicate_mapping:
-            self.duplicate_mapping = torch.tensor(duplicate_mapping, dtype=torch.long, device="cpu")
+            self.duplicate_mapping = torch.tensor(
+                duplicate_mapping, dtype=torch.long, device="cpu"
+            )
 
     def end_forward(self):
         if self.contains_prefill:
@@ -276,13 +284,16 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
 
         if self.cache_engine.duplicate_kv_cache:
             assert layer_id is not None
-            assert hasattr(self, "duplicate_mapping") and self.duplicate_mapping is not None
+            assert (
+                hasattr(self, "duplicate_mapping")
+                and self.duplicate_mapping is not None
+            )
 
             with torch.cuda.stream(self.duplicate_stream):
                 swap_blocks(
                     self.cache_engine.gpu_cache[layer_id],
                     self.cache_engine.cpu_cache[layer_id],
-                    self.duplicate_mapping
+                    self.duplicate_mapping,
                 )
 
         return output

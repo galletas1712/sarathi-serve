@@ -22,7 +22,8 @@ NVCC_FLAGS += [f"-D_GLIBCXX_USE_CXX11_ABI={ABI}"]
 
 if CUDA_HOME is None:
     raise RuntimeError(
-        "Cannot find CUDA_HOME. CUDA must be available to build the package.")
+        "Cannot find CUDA_HOME. CUDA must be available to build the package."
+    )
 
 
 def get_nvcc_cuda_version(cuda_dir: str) -> Version:
@@ -30,8 +31,9 @@ def get_nvcc_cuda_version(cuda_dir: str) -> Version:
 
     Adapted from https://github.com/NVIDIA/apex/blob/8b7a1ff183741dd8f9b87e7bafd04cfde99cea28/setup.py
     """
-    nvcc_output = subprocess.check_output([cuda_dir + "/bin/nvcc", "-V"],
-                                          universal_newlines=True)
+    nvcc_output = subprocess.check_output(
+        [cuda_dir + "/bin/nvcc", "-V"], universal_newlines=True
+    )
     output = nvcc_output.split()
     release_idx = output.index("release") + 1
     nvcc_cuda_version = parse(output[release_idx].split(",")[0])
@@ -45,7 +47,8 @@ for i in range(device_count):
     major, minor = torch.cuda.get_device_capability(i)
     if major < 7:
         raise RuntimeError(
-            "GPUs with compute capability less than 7.0 are not supported.")
+            "GPUs with compute capability less than 7.0 are not supported."
+        )
     compute_capabilities.add(major * 10 + minor)
 
 # Validate the NVCC CUDA version.
@@ -80,9 +83,7 @@ if not compute_capabilities:
 
 # Add target compute capabilities to NVCC flags.
 for capability in compute_capabilities:
-    NVCC_FLAGS += [
-        "-gencode", f"arch=compute_{capability},code=sm_{capability}"
-    ]
+    NVCC_FLAGS += ["-gencode", f"arch=compute_{capability},code=sm_{capability}"]
 
 # Use NVCC threads to parallelize the build.
 if nvcc_cuda_version >= Version("11.2"):
@@ -127,7 +128,11 @@ ext_modules.append(activation_extension)
 # Fused MOR kernels.
 moe_extension = CUDAExtension(
     name="sarathi.moe_ops",
-    sources=["csrc/moe.cpp", "csrc/moe_align_block_size_kernels.cu", "csrc/moe_topk_softmax_kernels.cu"],
+    sources=[
+        "csrc/moe.cpp",
+        "csrc/moe_align_block_size_kernels.cu",
+        "csrc/moe_topk_softmax_kernels.cu",
+    ],
     extra_compile_args={
         "cxx": CXX_FLAGS,
         "nvcc": NVCC_FLAGS,
@@ -146,6 +151,7 @@ cache_kernel_extension = CUDAExtension(
 )
 ext_modules.append(cache_kernel_extension)
 
+
 def get_path(*filepath) -> str:
     return os.path.join(ROOT_DIR, *filepath)
 
@@ -156,8 +162,9 @@ def find_version(filepath: str):
     Adapted from https://github.com/ray-project/ray/blob/0b190ee1160eeca9796bc091e07eaebf4c85b511/python/setup.py
     """
     with open(filepath) as fp:
-        version_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]",
-                                  fp.read(), re.M)
+        version_match = re.search(
+            r"^__version__ = ['\"]([^'\"]*)['\"]", fp.read(), re.M
+        )
         if version_match:
             return version_match.group(1)
         raise RuntimeError("Unable to find version string.")

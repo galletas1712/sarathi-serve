@@ -9,7 +9,6 @@ logger = logging.getLogger(__name__)
 
 
 class DataSeries:
-
     def __init__(
         self,
         x_name: str,
@@ -114,7 +113,6 @@ class DataSeries:
     def print_series_stats(
         self, df: pd.DataFrame, plot_name: str, y_name: str = None
     ) -> None:
-
         if len(self.data_series) == 0:
             return
 
@@ -140,7 +138,6 @@ class DataSeries:
     def print_distribution_stats(
         self, df: pd.DataFrame, plot_name: str, y_name: str = None
     ) -> None:
-
         if len(self.data_series) == 0:
             return
 
@@ -186,7 +183,6 @@ class DataSeries:
         start_time: float = 0,
         y_cumsum: bool = True,
     ) -> None:
-
         if len(self.data_series) == 0:
             return
 
@@ -229,7 +225,6 @@ class DataSeries:
         self._save_df(df, path, plot_name)
 
     def plot_cdf(self, path: str, plot_name: str, y_axis_label: str = None) -> None:
-
         if len(self.data_series) == 0:
             return
 
