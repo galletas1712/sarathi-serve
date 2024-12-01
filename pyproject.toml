@@ -60,4 +60,3 @@ no-build-isolation-package = ["sarathi_kernels"]
 
 [tool.uv.workspace]
 members = ["sarathi"]
-exclude = ["sarathi_kernels"]
