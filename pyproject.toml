@@ -63,3 +63,6 @@ no-build-isolation-package = ["sarathi_kernels"]
 
 [tool.uv.workspace]
 members = ["sarathi"]
+
+[tool.basedpyright]
+venvPath = ".venv"
