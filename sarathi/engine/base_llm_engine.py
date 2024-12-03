@@ -246,12 +246,18 @@ class BaseLLMEngine:
         self.config.cache_config.num_gpu_blocks = num_gpu_blocks
 
         if self.config.cache_config.num_cpu_blocks is None:
+            assert (
+                not self.config.cache_config.duplicate_kv_cache
+            ), "(for now) duplicate kv cache without unknown CPU blocks not supported"
             logger.warning(
                 "Using the same number of CPU blocks as GPU blocks because CPU was not specified."
             )
             self.config.cache_config.num_cpu_blocks = (
                 self.config.cache_config.num_gpu_blocks
             )
+
+        if self.config.cache_config.duplicate_kv_cache:
+            assert self.config.cache_config.num_cpu_blocks > num_gpu_blocks
 
         # Initialize the cache.
         self._run_workers(

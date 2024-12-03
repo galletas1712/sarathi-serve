@@ -158,6 +158,7 @@ class BaseWorker:
 
         self.config.cache_config = cache_config
 
+        print("Called init cache engine")
         get_attention_wrapper().init_cache_engine(cache_config)
 
         self.seq_manager = WorkerSequenceManager(

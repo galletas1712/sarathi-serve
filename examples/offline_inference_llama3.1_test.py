@@ -65,6 +65,8 @@ system_config = SystemConfig(
     metrics_config=metrics_config,
 )
 
+system_config.cache_config.num_gpu_blocks = 2048
+
 llm_engine = LLMEngine.from_system_config(system_config)
 
 

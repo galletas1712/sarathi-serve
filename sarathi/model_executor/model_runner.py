@@ -187,7 +187,6 @@ class ModelRunner:
         self.model(
             hidden_states=input_tokens,
             positions=input_positions,
-            kv_caches=[None] * num_layers,
         )
 
         # Calculate the number of blocks that can be allocated with the

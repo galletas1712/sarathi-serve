@@ -31,6 +31,8 @@ class BaseAttentionWrapper(ABC):
         self.block_size = block_size
         self._timers = {}
 
+        self.cache_engine = None
+
     """
     For a given model, all layers same the same AttentionWrapper instance.
     However, we cannot have a single timer for all layers because the same timer cannot be turned on/off dynamically.

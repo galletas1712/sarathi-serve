@@ -179,7 +179,7 @@ class CacheConfig:
     )
 
     def __post_init__(self):
-        if self.duplicate_kv_cache:
+        if self.num_gpu_blocks is not None and self.duplicate_kv_cache:
             assert (
                 self.num_cpu_blocks > self.num_gpu_blocks
             ), "num_cpu_blocks must be greater than num_gpu_blocks for duplicate_kv_cache=True."
