@@ -56,7 +56,6 @@ from sarathi.model_executor.weight_utils import (
     load_padded_tensor_parallel_vocab,
     load_tensor_parallel_weights,
 )
-from sarathi.model_executor.attention.cache_engine import KVCache
 
 
 class LlamaMLP(nn.Module):
@@ -113,10 +112,11 @@ class LlamaAttention(nn.Module):
         hidden_size: int,
         num_heads: int,
         num_kv_heads: int,
+        global_layer_id: int,
+        worker_layer_id: int,
         rope_theta: float = 10000,
         rope_scaling: Optional[Dict[str, Any]] = None,
         max_position_embeddings: int = 8192,
-        layer_id: Optional[int] = None,
     ) -> None:
         super().__init__()
         self.hidden_size = hidden_size
@@ -133,7 +133,8 @@ class LlamaAttention(nn.Module):
         self.scaling = self.head_dim**-0.5
         self.rope_theta = rope_theta
         self.max_position_embeddings = max_position_embeddings
-        self.layer_id = layer_id
+        self.global_layer_id = global_layer_id
+        self.worker_layer_id = worker_layer_id
 
         self.qkv_proj = ColumnParallelLinear(
             hidden_size,
@@ -143,7 +144,7 @@ class LlamaAttention(nn.Module):
             perform_initialization=False,
             linear_metric_name=OperationMetrics.ATTN_PRE_PROJ,
             communication_metric_name=OperationMetrics.ATTN_PRE_PROJ_ALL_GATHER,
-            layer_id=layer_id,
+            layer_id=global_layer_id,
         )
         self.o_proj = RowParallelLinear(
             self.total_num_heads * self.head_dim,
@@ -153,7 +154,7 @@ class LlamaAttention(nn.Module):
             perform_initialization=False,
             linear_metric_name=OperationMetrics.ATTN_POST_PROJ,
             communication_metric_name=OperationMetrics.ATTN_POST_PROJ_ALL_REDUCE,
-            layer_id=layer_id,
+            layer_id=global_layer_id,
         )
         self.rotary_emb = get_rope(
             head_size=self.head_dim,
@@ -169,19 +170,18 @@ class LlamaAttention(nn.Module):
         self,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
-        kv_cache: KVCache,
     ) -> torch.Tensor:
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         with self._attn_rope_timer:
             q, k = self.rotary_emb(positions, q, k)
         attn_output = get_attention_wrapper().forward(
-            q,
-            k,
-            v,
-            kv_cache,
-            self.scaling,
-            self.layer_id,
+            query=q,
+            key=k,
+            value=v,
+            global_layer_id=self.global_layer_id,
+            worker_layer_id=self.worker_layer_id,
+            softmax_scale=self.scaling,
         )
         output, _ = self.o_proj(attn_output)
         return output
@@ -189,11 +189,14 @@ class LlamaAttention(nn.Module):
 
 class LlamaDecoderLayer(nn.Module):
     def __init__(
-        self,
-        config: LlamaConfig,
-        layer_id: Optional[int] = None,
+        self, config: LlamaConfig, global_layer_id: int, worker_layer_id: int
     ) -> None:
         super().__init__()
+        assert (
+            global_layer_id is not None
+            and worker_layer_id is not None
+            and worker_layer_id <= global_layer_id
+        )
         self.hidden_size = config.hidden_size
         # Requires transformers > 4.32.0
         rope_theta = getattr(config, "rope_theta", 10000)
@@ -206,32 +209,32 @@ class LlamaDecoderLayer(nn.Module):
             rope_theta=rope_theta,
             rope_scaling=rope_scaling,
             max_position_embeddings=max_position_embeddings,
-            layer_id=layer_id,
+            global_layer_id=global_layer_id,
+            worker_layer_id=worker_layer_id,
         )
         self.mlp = LlamaMLP(
             hidden_size=self.hidden_size,
             intermediate_size=config.intermediate_size,
             hidden_act=config.hidden_act,
-            layer_id=layer_id,
+            layer_id=global_layer_id,
         )
         self.input_layernorm = RMSNorm(
             config.hidden_size,
             eps=config.rms_norm_eps,
             norm_name=OperationMetrics.INPUT_LAYERNORM,
-            layer_id=layer_id,
+            layer_id=global_layer_id,
         )
         self.post_attention_layernorm = RMSNorm(
             config.hidden_size,
             eps=config.rms_norm_eps,
             norm_name=OperationMetrics.POST_ATTENTION_LAYERNORM,
-            layer_id=layer_id,
+            layer_id=global_layer_id,
         )
 
     def forward(
         self,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
-        kv_cache: KVCache,
     ) -> torch.Tensor:
         # Self Attention
         residual = hidden_states
@@ -239,7 +242,6 @@ class LlamaDecoderLayer(nn.Module):
         hidden_states = self.self_attn(
             positions=positions,
             hidden_states=hidden_states,
-            kv_cache=kv_cache,
         )
         hidden_states = residual + hidden_states
 
@@ -278,7 +280,11 @@ class LlamaModel(nn.Module):
         layer_offset = get_pipeline_model_parallel_rank() * num_layers
         self.layers = nn.ModuleList(
             [
-                LlamaDecoderLayer(config, layer_id=layer_id + layer_offset)
+                LlamaDecoderLayer(
+                    config,
+                    global_layer_id=layer_id + layer_offset,
+                    worker_layer_id=layer_id,
+                )
                 for layer_id in range(num_layers)
             ]
         )
@@ -291,7 +297,6 @@ class LlamaModel(nn.Module):
         self,
         hidden_states: torch.Tensor,
         positions: torch.Tensor,
-        kv_caches: List[KVCache],
     ) -> torch.Tensor:
         if self.embed_tokens:
             hidden_states = self.embed_tokens(hidden_states)
@@ -301,7 +306,6 @@ class LlamaModel(nn.Module):
             hidden_states = layer(
                 positions,
                 hidden_states,
-                kv_caches[i],
             )
 
         if self.norm:
@@ -337,7 +341,6 @@ class LlamaForCausalLM(nn.Module):
         self,
         hidden_states: torch.Tensor,
         positions: torch.Tensor,
-        kv_caches: List[KVCache],
     ) -> torch.Tensor:
         if not self.is_pipeline_first_stage:
             # hidden_states_shape: num_tokens x hidden_size
@@ -348,7 +351,7 @@ class LlamaForCausalLM(nn.Module):
             )
             hidden_states = recv(hidden_states)
 
-        hidden_states = self.model(hidden_states, positions, kv_caches)
+        hidden_states = self.model(hidden_states, positions)
 
         if not self.is_pipeline_last_stage:
             send(hidden_states)

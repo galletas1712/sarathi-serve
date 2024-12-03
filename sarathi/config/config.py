@@ -5,10 +5,10 @@ from typing import Optional
 
 from sarathi.config.base_poly_config import BasePolyConfig
 from sarathi.config.flat_dataclass import create_flat_dataclass
-from sarathi.logger import init_logger
-from sarathi.utils.transformers.config import get_config
 from sarathi.config_types import AttentionBackend, ResourceMapping, SchedulerType
+from sarathi.logger import init_logger
 from sarathi.utils.hf_utils import get_and_verify_dtype, get_and_verify_max_len
+from sarathi.utils.transformers.config import get_config
 
 logger = init_logger(__name__)
 
@@ -172,7 +172,7 @@ class CacheConfig:
         metadata={"help": "Whether to partially swap out prefixes of sequences."},
     )
     duplicate_kv_cache: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "Duplicate KV cache in host memory of all running requests. Requires num_cpu_blocks > num_gpu_blocks."
         },

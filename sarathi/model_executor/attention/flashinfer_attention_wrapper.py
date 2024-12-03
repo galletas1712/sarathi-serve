@@ -48,8 +48,6 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
         self.append_kv_page_indptr_tensor = None
         self.append_kv_last_page_len_tensor = None
 
-        self.duplicate_stream = torch.cuda.Stream(device)
-
     def to_int_tensor(self, data: List[int]) -> torch.Tensor:
         return torch.tensor(data, dtype=torch.int32, device="cuda")
 
@@ -205,10 +203,7 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
             prefill_kv_last_page_len + decode_kv_last_page_len
         )
 
-        if duplicate_mapping:
-            self.duplicate_mapping = torch.tensor(
-                duplicate_mapping, dtype=torch.long, device="cpu"
-            )
+        self.cache_engine.register_duplicate_mapping_optional(duplicate_mapping)
 
     def end_forward(self):
         if self.contains_prefill:
@@ -219,19 +214,17 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
 
         self.is_metadata_initialized = False
 
-        if hasattr(self, "duplicate_mapping"):
-            # NOTE: Synchronize the duplication stream at the end of ALL layers
-            self.duplicate_stream.synchronize()
-            del self.duplicate_mapping
+        # NOTE: Synchronize the duplication stream at the end of ALL layers
+        self.cache_engine.sync_and_remove_duplicate_mapping_optional()
 
     def forward(
         self,
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
-        kv_cache: torch.Tensor,
+        global_layer_id: int,
+        worker_layer_id: int,
         softmax_scale: float = 1.0,
-        layer_id: Optional[int] = None,
     ) -> torch.Tensor:
         assert self.is_metadata_initialized, "Metadata is not initialized."
 
@@ -239,19 +232,21 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
             # there is no need to call attention in profiling mode
             return torch.zeros_like(query)
 
-        with self.get_timer(OperationMetrics.ATTN_INPUT_RESHAPE, layer_id):
+        with self.get_timer(OperationMetrics.ATTN_INPUT_RESHAPE, global_layer_id):
             query = query.contiguous().reshape(-1, self.num_q_heads, self.head_dim)
             key = key.contiguous().reshape(-1, self.num_kv_heads, self.head_dim)
             value = value.contiguous().reshape(-1, self.num_kv_heads, self.head_dim)
 
         output = torch.empty_like(query)
+        if self.cache_engine.async_swap_in:
+            self.cache_engine.wait_for_swap_in(layer=worker_layer_id)
 
-        with self.get_timer(OperationMetrics.ATTN_KV_CACHE_SAVE, layer_id):
+        with self.get_timer(OperationMetrics.ATTN_KV_CACHE_SAVE, global_layer_id):
             append_paged_kv_cache(
                 key,
                 value,
                 self.append_qo_indptr_tensor,
-                kv_cache,
+                self.cache_engine.gpu_cache[worker_layer_id],
                 self.append_kv_page_indices_tensor,
                 self.append_kv_page_indptr_tensor,
                 self.append_kv_last_page_len_tensor,
@@ -259,41 +254,29 @@ class FlashinferAttentionWrapper(BaseAttentionWrapper):
             )
 
         # TODO: timer
-        with self.get_timer(OperationMetrics.ATTN_PREFILL, layer_id):
+        with self.get_timer(OperationMetrics.ATTN_PREFILL, global_layer_id):
             if self.contains_prefill:
                 output[: self.num_prefill_tokens] = self.prefill_wrapper.forward(
                     query[: self.num_prefill_tokens],
-                    kv_cache,
+                    self.cache_engine.gpu_cache[worker_layer_id],
                     pos_encoding_mode="NONE",
                     sm_scale=softmax_scale,
                 )
 
-        with self.get_timer(OperationMetrics.ATTN_DECODE, layer_id):
+        with self.get_timer(OperationMetrics.ATTN_DECODE, global_layer_id):
             if self.contains_decode:
                 output[self.num_prefill_tokens : self.num_total_tokens] = (
                     self.decode_wrapper.forward(
                         query[self.num_prefill_tokens : self.num_total_tokens],
-                        kv_cache,
+                        self.cache_engine.gpu_cache[worker_layer_id],
                         pos_encoding_mode="NONE",
                         sm_scale=softmax_scale,
                     )
                 )
 
-        with self.get_timer(OperationMetrics.ATTN_OUTPUT_RESHAPE, layer_id):
+        with self.get_timer(OperationMetrics.ATTN_OUTPUT_RESHAPE, global_layer_id):
             output = output.reshape(-1, self.num_q_heads * self.head_dim)
 
-        if self.cache_engine.duplicate_kv_cache:
-            assert layer_id is not None
-            assert (
-                hasattr(self, "duplicate_mapping")
-                and self.duplicate_mapping is not None
-            )
-
-            with torch.cuda.stream(self.duplicate_stream):
-                swap_blocks(
-                    self.cache_engine.gpu_cache[layer_id],
-                    self.cache_engine.cpu_cache[layer_id],
-                    self.duplicate_mapping,
-                )
+        self.cache_engine.swap_out_duplicate_kv_cache(worker_layer_id)
 
         return output

@@ -11,7 +11,7 @@ from sarathi.core.datatypes.comm_info import CommInfo
 from sarathi.core.datatypes.request_output import RequestOutput
 from sarathi.core.datatypes.sampling_params import SamplingParams
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
-from sarathi.core.datatypes.sequence import SamplerOutputs, DecodeableSequence, Sequence
+from sarathi.core.datatypes.sequence import DecodeableSequence, SamplerOutputs, Sequence
 from sarathi.core.datatypes.step_inputs import StepInputs
 from sarathi.core.scheduler.scheduler_registry import SchedulerRegistry
 from sarathi.core.sequence_manager.engine_sequence_manager import EngineSequenceManager
@@ -20,9 +20,9 @@ from sarathi.logger import init_logger
 from sarathi.metrics.constants import CpuOperationMetrics
 from sarathi.metrics.cpu_timer import CpuTimer
 from sarathi.metrics.metrics_store import MetricsStore
-from sarathi.utils.transformers.tokenizer import get_tokenizer
 from sarathi.utils import Counter, get_ip, unset_cuda_visible_devices
 from sarathi.utils.threading_utils import synchronized
+from sarathi.utils.transformers.tokenizer import get_tokenizer
 
 logger = init_logger(__name__)
 
@@ -387,15 +387,8 @@ class BaseLLMEngine:
         Then, it executes the model and updates the scheduler with the model outputs.
         Finally, it decodes the sequences and returns the newly generated results.
         """
-        finished_swap_in_seq_ids = self.notify_socket.recv_pyobj()
-
-        if finished_swap_in_seq_ids:
-            print(
-                f"Engine received finished swap in seq ids: {finished_swap_in_seq_ids}"
-            )
-
-        self.scheduler.mark_swap_in_finished(finished_swap_in_seq_ids)
-        self.seq_manager.mark_swap_in_finished(finished_swap_in_seq_ids)
+        # TODO: remove this
+        self.notify_socket.recv_pyobj()
 
         with self._scheduler_timer:
             scheduler_outputs = self.scheduler.schedule()

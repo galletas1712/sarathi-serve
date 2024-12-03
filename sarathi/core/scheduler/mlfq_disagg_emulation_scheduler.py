@@ -2,9 +2,9 @@ from typing import List
 
 from sarathi.config import (
     CacheConfig,
+    MLFQDisaggEmulationSchedulerConfig,
     ModelConfig,
     ParallelConfig,
-    MLFQDisaggEmulationSchedulerConfig,
 )
 from sarathi.core.block_space_manager import BlockDevice
 from sarathi.core.datatypes.sequence import Sequence, SequenceScheduleMetadata
@@ -235,7 +235,6 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         for seqs in self.decode_queues:
             queue.extend(seqs)
 
-        queue = list(filter(lambda seq: not seq.is_swapping_in(), queue))
         for seq in queue:
             assert seq.is_prompt_processing_finished()
 
@@ -248,6 +247,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         swap_in_seq_ids = []
         scheduled_seq_id_metadata_list = []
         num_batched_tokens = 0
+        seqs_to_finish_swapping_in = []
 
         queue = self._update_and_get_queue(running_decodes)
 
@@ -328,25 +328,30 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 assert self.block_manager.can_swap_in_and_append_slot(
                     seq.seq_id, seq.get_num_logical_blocks()
                 )
-                self._swap_in(seq)
+                if self.cache_config.async_swap_in:
+                    self._begin_swap_in(seq)
+                    seqs_to_finish_swapping_in.append(seq)
+                else:
+                    self._swap_in(seq)
                 swap_in_seq_ids.append(seq.seq_id)
 
-            if seq.is_paused() or (
-                seq.is_swapped_out() and not self.cache_config.async_swap_in
-            ):
-                print(f"Iteration {self._iteration_id}: Scheduling {seq.seq_id}")
-                # Append new slots to the sequence group.
-                self._append_slot(seq)
-                running.append(seq)
-                num_batched_tokens += 1
-                scheduled_seq_id_metadata_list.append(
-                    SequenceScheduleMetadata.from_sequence(seq)
-                )
-                self.last_iteration_ran[seq.seq_id] = self._iteration_id
+            print(f"Iteration {self._iteration_id}: Scheduling {seq.seq_id}")
+            # Append new slots to the sequence group.
+            self._append_slot(seq)
+            running.append(seq)
+            num_batched_tokens += 1
+            scheduled_seq_id_metadata_list.append(
+                SequenceScheduleMetadata.from_sequence(seq)
+            )
+            self.last_iteration_ran[seq.seq_id] = self._iteration_id
 
             i += 1
 
         self._update_priorities(running)
+
+        assert not seqs_to_finish_swapping_in or self.cache_config.async_swap_in
+        for seq in seqs_to_finish_swapping_in:
+            self._finish_swap_in(seq)
 
         return (
             running,

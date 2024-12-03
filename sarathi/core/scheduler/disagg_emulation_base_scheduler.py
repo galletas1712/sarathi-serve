@@ -30,14 +30,6 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
         # Fix the current time.
         now = time.monotonic()
 
-        # Swapped in requests should be moved to the running list
-        while self.swapped_in:
-            seq = self.swapped_in.popitem()[1]
-            self.running.append(seq)
-            logger.debug(
-                f"(Iteration: {self._iteration_id}) Moving swapped in request {seq.seq_id} into running list"
-            )
-
         # Sort both waiting and running queues
         self.running = sorted(
             self.running, key=lambda seq: now - seq.arrival_time, reverse=True
@@ -67,29 +59,25 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
 
         prefill_scheduled_success = False
 
-        # NOTE: We will never schedule a prefill if there's decode sequences swapping in - we want to profile this
-        # TODO: implement keeping KV cache resident in CPU memory always to mitigate potential issues with this
-
         # Schedule prefill
-        if not self.swapping_in:
-            # We will swap out decodes to make room for prefills. They'll remain swapped out until the next iteration
-            # In FCFS, they'll be brought back in immediately (begin swap in)
-            # In MLFQ, the new requests will take priority
-            # NOTE: If we don't add a sequence to scheduled_seq_id_metadata list so it doesn't get run
-            # NOTE: _schedule_prefills should also schedule running prefills
-            (
-                running,
-                ignored_seq_ids,
-                preempted_seq_ids,
-                swap_out_seq_ids,
-                swap_out_lens,
-                swap_in_seq_ids,
-                scheduled_seq_id_metadata_list,
-            ) = self._schedule_prefills(running_prefills, running_decodes, now)
+        # We will swap out decodes to make room for prefills. They'll remain swapped out until the next iteration
+        # In FCFS, they'll be brought back in immediately (begin swap in)
+        # In MLFQ, the new requests will take priority
+        # NOTE: If we don't add a sequence to scheduled_seq_id_metadata list so it doesn't get run
+        # NOTE: _schedule_prefills should also schedule running prefills
+        (
+            running,
+            ignored_seq_ids,
+            preempted_seq_ids,
+            swap_out_seq_ids,
+            swap_out_lens,
+            swap_in_seq_ids,
+            scheduled_seq_id_metadata_list,
+        ) = self._schedule_prefills(running_prefills, running_decodes, now)
 
-            if scheduled_seq_id_metadata_list:
-                print(f"Iteration {self._iteration_id}: scheduled PREFILL")
-                prefill_scheduled_success = True
+        if scheduled_seq_id_metadata_list:
+            print(f"Iteration {self._iteration_id}: scheduled PREFILL")
+            prefill_scheduled_success = True
 
         if not prefill_scheduled_success:
             (
@@ -116,9 +104,7 @@ class DisaggEmulationBaseScheduler(BaseScheduler):
             if seq.arrival_time <= now:
                 num_waiting += 1
         print("Number of waiting requests: ", num_waiting)
-        print(
-            f"Swapped out: {len(self.swapped_out)}, Swapped in: {len(self.swapped_in)}, Swapping in: {len(self.swapping_in)}"
-        )
+        print(f"Swapped out: {len(self.swapped_out)}")
         print(f"------ END SCHEDULER {self._iteration_id} -------")
 
         return SchedulerOutputs(

@@ -3,18 +3,18 @@ from typing import List, Optional, Tuple
 import torch
 import torch.distributed
 
-from sarathi.config import SchedulerType, SystemConfig
+from sarathi.config import SystemConfig
 from sarathi.core.datatypes.sampling_params import SamplingParams
 from sarathi.core.datatypes.sequence import Sequence, SequenceExecutionMetadata
 from sarathi.logger import init_logger
 from sarathi.metrics.constants import CpuOperationMetrics
 from sarathi.metrics.cpu_timer import CpuTimer
-from sarathi.model_executor.model_loader import get_model
 from sarathi.model_executor.attention import get_attention_wrapper
+from sarathi.model_executor.attention.cache_engine import CacheEngine
 from sarathi.model_executor.layers.sampler import Sampler
+from sarathi.model_executor.model_loader import get_model
 from sarathi.model_executor.utils import pad_to_alignment, set_random_seed
 from sarathi.utils import get_gpu_memory
-from sarathi.model_executor.attention.cache_engine import CacheEngine
 
 logger = init_logger(__name__)
 
@@ -235,7 +235,6 @@ class ModelRunner:
                 output = self.model(
                     hidden_states=input_tokens,
                     positions=input_positions,
-                    kv_caches=get_attention_wrapper().cache_engine.gpu_cache,
                 )
             except RuntimeError as e:
                 logger.error(

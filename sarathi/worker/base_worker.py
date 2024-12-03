@@ -2,15 +2,20 @@
 
 import os
 import time
+from pathlib import Path
 from threading import Event, Thread
 from typing import Optional, Tuple
-from pathlib import Path
 
 import torch
 import torch.distributed
 import zmq
 
-from sarathi.config import CacheConfig, ParallelConfig, SystemConfig
+from sarathi.config import (
+    CacheConfig,
+    DisaggEmulationSchedulerConfig,
+    ParallelConfig,
+    SystemConfig,
+)
 from sarathi.core.block_space_manager import BlockDevice
 from sarathi.core.datatypes.comm_info import CommInfo
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
@@ -18,7 +23,6 @@ from sarathi.core.datatypes.sequence import SamplerOutputs
 from sarathi.core.sequence_manager.worker_sequence_manager import WorkerSequenceManager
 from sarathi.logger import init_logger
 from sarathi.metrics.alt_metrics_store import WorkerMetricsStore
-from sarathi.model_executor.utils import set_random_seed
 from sarathi.model_executor.attention import (
     get_attention_wrapper,
     set_attention_backend,
@@ -29,8 +33,8 @@ from sarathi.model_executor.parallel_utils.parallel_state import (
     get_tensor_model_parallel_rank,
     initialize_model_parallel,
 )
+from sarathi.model_executor.utils import set_random_seed
 from sarathi.utils.threading_utils import exit_on_error, synchronized
-from sarathi.config import DisaggEmulationSchedulerConfig
 
 logger = init_logger(__name__)
 
@@ -209,6 +213,7 @@ class BaseWorker:
                 )
             get_attention_wrapper().cache_engine.swap_out(swap_out_mappings)
         else:
+            # ???????????????????????????????
             now = time.perf_counter()
             for i, seq_id in enumerate(scheduler_outputs.swap_out_seq_ids):
                 if scheduler_outputs.swap_out_lens:
@@ -274,6 +279,10 @@ class BaseWorker:
         self.metrics_store.on_batch_end(
             batch_id=self.curr_batch_id, finished_seq_ids=finished_seq_ids
         )
+        if self.config.cache_config.async_swap_in:
+            now = time.perf_counter()
+            for seq_id in swap_in_mappings.keys():
+                self.metrics_store.on_swap_in_end(seq_id, end_timestamp=now)
 
         self.curr_batch_id += 1
 
@@ -287,21 +296,9 @@ class BaseWorker:
 
         while True:
             logger.debug(f"Iteration: {self.curr_batch_id}")
-            finished_swap_in_seq_ids = (
-                get_attention_wrapper().cache_engine.pop_finished_swap_ins()
-            )
 
-            now = time.perf_counter()
-            for seq_id in finished_swap_in_seq_ids:
-                self.metrics_store.on_swap_in_end(seq_id, end_timestamp=now)
-
-            if finished_swap_in_seq_ids:
-                logger.debug(
-                    f"Iteration {self.curr_batch_id}: WORKER SAID FINISHED SWAPPING IN {finished_swap_in_seq_ids}"
-                )
-
-            self.seq_manager.mark_swap_in_finished(finished_swap_in_seq_ids)
-            self.notify_socket.send_pyobj(finished_swap_in_seq_ids)
+            # NOTE: This is for debugging purposes only to block the scheduler for easier reading. We'll remove this soon.
+            self.notify_socket.send_pyobj(True)
 
             start_engine_scheduler = time.perf_counter()
             step_inputs = self.enqueue_socket.recv_pyobj()

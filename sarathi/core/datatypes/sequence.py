@@ -256,9 +256,6 @@ class Sequence(SequenceBase):
     def is_running(self) -> bool:
         return SequenceStatus.is_running(self.get_status())
 
-    def is_swapping_in(self) -> bool:
-        return SequenceStatus.is_swapping_in(self.get_status())
-
     def is_swapped_out(self) -> bool:
         return SequenceStatus.is_swapped_out(self.get_status())
 

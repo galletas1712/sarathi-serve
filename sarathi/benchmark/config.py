@@ -5,13 +5,13 @@ from typing import Optional
 from sarathi.config import BaseEndpointConfig
 from sarathi.config.base_poly_config import BasePolyConfig
 from sarathi.config.flat_dataclass import create_flat_dataclass
-from sarathi.logger import init_logger
 from sarathi.config_types import (
     ReplicaResourceMapping,
     RequestGeneratorType,
     RequestIntervalGeneratorType,
     RequestLengthGeneratorType,
 )
+from sarathi.logger import init_logger
 
 logger = init_logger(__name__)
 
@@ -175,7 +175,7 @@ class SyntheticRequestGeneratorConfig(BaseRequestGeneratorConfig):
         default_factory=PoissonRequestIntervalGeneratorConfig
     )
     num_requests: int = field(
-        default=256, metadata={"help": "Number of requests to generate."}
+        default=100, metadata={"help": "Number of requests to generate."}
     )
     duration: float = field(
         default=None, metadata={"help": "Duration of the synthetic request generation."}

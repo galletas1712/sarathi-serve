@@ -47,10 +47,6 @@ class BaseScheduler(ABC):
         self.running: List[Sequence] = []
 
         self.swapped_out: Dict[str, Sequence] = {}
-        self.swapping_in: Dict[str, Sequence] = {}
-        self.swapped_in: Dict[str, Sequence] = {}
-        # NOTE: We have a separate self.swapped_in queue because the scheduler needds to decide where to put recently swapped in sequences in the running list
-        # NOTE: This is *ONLY* used when there are async swap ins.
 
     def reset_state(self) -> None:
         self._iteration_id = -1
@@ -64,13 +60,7 @@ class BaseScheduler(ABC):
         return self.get_num_unfinished_seqs() > 0
 
     def get_num_unfinished_seqs(self) -> int:
-        return (
-            len(self.waiting)
-            + len(self.running)
-            + len(self.swapped_out)
-            + len(self.swapping_in)
-            + len(self.swapped_in)
-        )
+        return len(self.waiting) + len(self.running) + len(self.swapped_out)
 
     @abstractmethod
     def _schedule(self) -> SchedulerOutputs:
@@ -110,12 +100,6 @@ class BaseScheduler(ABC):
         self.free_finished_seqs()
         self.num_running_batches -= 1
 
-    def mark_swap_in_finished(self, finished_swap_in_seq_ids: List[str]) -> None:
-        for seq_id in finished_swap_in_seq_ids:
-            logger.debug(f"Sequence {seq_id} has finished swapping in")
-            seq = self.swapping_in[seq_id]
-            self._finish_swap_in(seq)
-
     def _allocate(self, seq: Sequence) -> None:
         self.block_manager.allocate(seq)
 
@@ -139,40 +123,24 @@ class BaseScheduler(ABC):
         self.waiting.insert(0, seq)
 
     def _begin_swap_in(self, seq: Sequence) -> None:
-        seq.check_transition(SequenceStatus.SWAPPING_IN)
         del self.swapped_out[seq.seq_id]
-        self.swapping_in[seq.seq_id] = seq
         self.block_manager.begin_swap_in(seq.seq_id)
         if not self.cache_config.async_swap_in:
             self._finish_swap_in(seq)
 
     def _finish_swap_in(self, seq: Sequence) -> None:
-        seq.check_transition(SequenceStatus.PAUSED)
-        del self.swapping_in[seq.seq_id]
-        self.swapped_in[seq.seq_id] = seq
         self.block_manager.finish_swap_in(seq.seq_id)
 
     def _swap_in(self, seq: Sequence):
         # TODO: state transition check
-        if self.cache_config.async_swap_in:
-            self._begin_swap_in(seq)
-        else:
-            seq.check_transition(SequenceStatus.PAUSED)
-            del self.swapped_out[seq.seq_id]
-            # NOTE: No adding to swapped_in!
-            self.block_manager.swap_in(seq.seq_id)
+        seq.check_transition(SequenceStatus.PAUSED)
+        del self.swapped_out[seq.seq_id]
+        self.block_manager.swap_in(seq.seq_id)
 
     def _swap_out(
         self, seq: Sequence, num_blocks_to_swap: Optional[int] = None
     ) -> None:
         seq.check_transition(SequenceStatus.SWAPPED_OUT)
-        if seq.seq_id in self.swapped_in:
-            logger.warning(
-                f"Sequence {seq.seq_id} to swap in was recently swapped out and not yet made progress"
-            )
-            del self.swapped_in[
-                seq.seq_id
-            ]  # NOTE: Maybe we didn't remove from swapped_in queue properly
         self.block_manager.swap_out(seq.seq_id, num_blocks_to_swap)
         self.swapped_out[seq.seq_id] = seq
 

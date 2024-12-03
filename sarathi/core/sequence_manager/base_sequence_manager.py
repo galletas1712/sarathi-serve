@@ -40,10 +40,10 @@ class BaseSequenceManager(ABC):
         self.seq_map[seq_id].set_status(SequenceStatus.SWAPPED_OUT)
 
     def _begin_swap_in_seq(self, seq_id: str) -> None:
-        self.seq_map[seq_id].set_status(SequenceStatus.SWAPPING_IN)
+        self.seq_map[seq_id].set_status(SequenceStatus.PAUSED)
 
     def _finish_swap_in_seq(self, seq_id: str) -> None:
-        self.seq_map[seq_id].set_status(SequenceStatus.PAUSED)
+        pass
 
     def _swap_in_seq(self, seq_id: str) -> None:
         self.seq_map[seq_id].set_status(SequenceStatus.PAUSED)
@@ -85,7 +85,14 @@ class BaseSequenceManager(ABC):
             for seq_id in scheduler_outputs.swap_out_seq_ids:
                 self._swap_out_seq(seq_id)
 
+        # This is just for the assert, feel free to skip
+        scheduled_seq_ids = [
+            seq_metadata.seq_id
+            for seq_metadata in scheduler_outputs.scheduled_seq_id_metadata_list
+        ]
+
         for seq_id in scheduler_outputs.swap_in_seq_ids:
+            assert seq_id in scheduled_seq_ids
             if self.config.cache_config.async_swap_in:
                 self._begin_swap_in_seq(seq_id)
             else:
@@ -132,6 +139,13 @@ class BaseSequenceManager(ABC):
         assert len(scheduler_outputs.scheduled_seq_id_metadata_list) == len(
             sampler_outputs
         )
+
+        # First, update these to running state and most importantly, clear CPU blocks in worker_sequence_manager
+        if self.config.cache_config.async_swap_in:
+            for swap_in_seq_id in scheduler_outputs.swap_in_seq_ids:
+                assert swap_in_seq_id in self.seq_map
+                self._finish_swap_in_seq(swap_in_seq_id)
+
         for seq_id_metadata, sampler_output in zip(
             scheduler_outputs.scheduled_seq_id_metadata_list, sampler_outputs
         ):
@@ -161,8 +175,3 @@ class BaseSequenceManager(ABC):
                 finished_seq_ids.append(seq_id)
 
         return finished_seq_ids
-
-    @synchronized
-    def mark_swap_in_finished(self, finished_swap_in_seq_ids: List[str]) -> None:
-        for seq_id in finished_swap_in_seq_ids:
-            self._finish_swap_in_seq(seq_id)

@@ -3,12 +3,11 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 
-from sarathi.config import ModelConfig, ParallelConfig, CacheConfig
+from sarathi.config import CacheConfig, ModelConfig, ParallelConfig
 from sarathi.core.datatypes.sequence import SequenceExecutionMetadata
 from sarathi.metrics.constants import OperationMetrics
 from sarathi.metrics.cuda_timer import CudaTimer
 from sarathi.model_executor.attention.cache_engine import CacheEngine
-from sarathi_kernels.cache_ops import swap_blocks
 
 
 class BaseAttentionWrapper(ABC):
@@ -45,7 +44,7 @@ class BaseAttentionWrapper(ABC):
 
     def init_cache_engine(self, cache_config: CacheConfig) -> None:
         self.cache_engine = CacheEngine(
-            self.model_config, self.parallel_config, cache_config
+            self.model_config, self.parallel_config, cache_config, self.device
         )
 
     @abstractmethod

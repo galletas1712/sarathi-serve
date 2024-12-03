@@ -1,5 +1,5 @@
 # python3 benchmark/main.py --cache_config_num_gpu_blocks=2048 --poisson_request_interval_generator_config_qps=0.1 --scheduler_config_type=FCFS_DISAGG_EMULATION
-uv run sarathi/benchmark/main.py --cache_config_num_gpu_blocks=2048 --poisson_request_interval_generator_config_qps=0.1 --scheduler_config_type=MLFQ_DISAGG_EMULATION
+uv run sarathi/benchmark/main.py --cache_config_num_gpu_blocks=2048 --poisson_request_interval_generator_config_qps=0.2 --scheduler_config_type=MLFQ_DISAGG_EMULATION
 # python3 benchmark/main.py --cache_config_num_gpu_blocks=2048 --poisson_request_interval_generator_config_qps=0.2 --scheduler_config_type=FCFS_DISAGG_EMULATION
 # python3 benchmark/main.py --cache_config_num_gpu_blocks=2048 --poisson_request_interval_generator_config_qps=0.2 --scheduler_config_type=MLFQ_DISAGG_EMULATION
 # python3 benchmark/main.py --cache_config_num_gpu_blocks=2048 --poisson_request_interval_generator_config_qps=0.3 --scheduler_config_type=FCFS_DISAGG_EMULATION

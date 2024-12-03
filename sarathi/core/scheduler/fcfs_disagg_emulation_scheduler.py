@@ -151,6 +151,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         scheduled_seq_id_metadata_list = []
 
         num_batched_tokens = 0
+        seqs_to_finish_swapping_in = []
 
         # True FCFS order
         queue = sorted(
@@ -225,20 +226,25 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                     assert self.block_manager.can_swap_in_and_append_slot(
                         seq.seq_id, seq.get_num_logical_blocks()
                     )
-                    self._swap_in(seq)
+                    if self.cache_config.async_swap_in:
+                        self._begin_swap_in(seq)
+                        seqs_to_finish_swapping_in.append(seq)
+                    else:
+                        self._swap_in(seq)
                     swap_in_seq_ids.append(seq.seq_id)
 
-                if seq.is_paused() or (
-                    seq.is_swapped_out() and not self.cache_config.async_swap_in
-                ):
-                    print(f"Iteration {self._iteration_id}: Scheduling {seq.seq_id}")
-                    # Append new slots to the sequence group.
-                    self._append_slot(seq)
-                    running.append(seq)
-                    num_batched_tokens += 1
-                    scheduled_seq_id_metadata_list.append(
-                        SequenceScheduleMetadata.from_sequence(seq)
-                    )
+                print(f"Iteration {self._iteration_id}: Scheduling {seq.seq_id}")
+                # Append new slots to the sequence group.
+                self._append_slot(seq)
+                running.append(seq)
+                num_batched_tokens += 1
+                scheduled_seq_id_metadata_list.append(
+                    SequenceScheduleMetadata.from_sequence(seq)
+                )
+
+        assert not seqs_to_finish_swapping_in or self.cache_config.async_swap_in
+        for seq in seqs_to_finish_swapping_in:
+            self._finish_swap_in(seq)
 
         return (
             running,

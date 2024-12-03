@@ -8,7 +8,6 @@ class SequenceStatus(enum.Enum):
     WAITING = enum.auto()
     RUNNING = enum.auto()
     PAUSED = enum.auto()
-    SWAPPING_IN = enum.auto()
     SWAPPED_OUT = enum.auto()
     FINISHED_STOPPED = enum.auto()
     FINISHED_LENGTH_CAPPED = enum.auto()
@@ -36,11 +35,7 @@ class SequenceStatus(enum.Enum):
             ],
             SequenceStatus.SWAPPED_OUT: [
                 SequenceStatus.SWAPPED_OUT,  # NOTE: We can keep on evicting more tokens from a request
-                SequenceStatus.SWAPPING_IN,  # NOTE: For async swap ins
-                SequenceStatus.PAUSED,  # NOTE: For synchronous swap ins
-            ],
-            SequenceStatus.SWAPPING_IN: [
-                SequenceStatus.PAUSED,
+                SequenceStatus.PAUSED,  # NOTE: Both synchronous and asynchronous swap ins will do this
             ],
             SequenceStatus.FINISHED_IGNORED: [],
             SequenceStatus.FINISHED_STOPPED: [],
@@ -69,10 +64,6 @@ class SequenceStatus(enum.Enum):
     @staticmethod
     def is_waiting(status: "SequenceStatus") -> bool:
         return status == SequenceStatus.WAITING
-
-    @staticmethod
-    def is_swapping_in(status: "SequenceStatus") -> bool:
-        return status == SequenceStatus.SWAPPING_IN
 
     @staticmethod
     def is_swapped_out(status: "SequenceStatus") -> bool:
