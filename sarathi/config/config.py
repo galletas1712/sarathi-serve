@@ -193,10 +193,22 @@ class ParallelConfig:
     tensor_parallel_size: int = field(
         default=1, metadata={"help": "Number of tensor parallel groups."}
     )
+    data_parallel_size: int = field(
+        default=1, metadata={"help": "Number of data parallel groups."}
+    )
+    disaggregate: bool = field(
+        default=False, metadata={"help": "Whether to disaggregate prefills and decodes."}
+    )
 
     def __post_init__(self):
-        self.world_size = self.pipeline_parallel_size * self.tensor_parallel_size
-        assert self.world_size == 1
+        self.world_size = self.data_prallel_size * self.pipeline_parallel_size * self.tensor_parallel_size
+        if not self.disaggregate:
+            # NOTE: we're not supporting PP and TP for now
+            assert self.world_size == 1
+        if self.disaggregate:
+            # NOTE: Not supporting PP and TP, only supporting disaggregation on 2 GPUs
+            assert self.pipeline_parallel_size == 1 and self.tensor_parallel_size == 1
+            assert self.data_parallel_size == 2
 
 
 @dataclass

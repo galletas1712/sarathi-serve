@@ -1,5 +1,4 @@
 import copy
-import math
 import time
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple
@@ -28,7 +27,7 @@ logger = init_logger(__name__)
 
 _MAX_WORKER_CONCURRENCY = 1
 
-ModelParallelRank = Tuple[int, int]
+ModelParallelRank = Tuple[int, int, int]
 
 
 class BaseLLMEngine:
@@ -125,9 +124,7 @@ class BaseLLMEngine:
     def _get_worker_impl(self):
         # Lazy import the Worker to avoid importing torch.cuda/xformers
         # before CUDA_VISIBLE_DEVICES is set in the Worker
-        from sarathi.worker.base_worker import (
-            BaseWorker,  # pylint: disable=import-outside-toplevel
-        )
+        from sarathi.worker.base_worker import BaseWorker  # pylint: disable=import-outside-toplevel
 
         return BaseWorker
 

@@ -31,6 +31,7 @@ from sarathi.model_executor.model_runner import ModelRunner
 from sarathi.model_executor.parallel_utils.parallel_state import (
     get_pipeline_model_parallel_rank,
     get_tensor_model_parallel_rank,
+    get_data_parallel_rank,
     initialize_model_parallel,
 )
 from sarathi.model_executor.utils import set_random_seed
@@ -128,6 +129,7 @@ class BaseWorker:
 
         self.tensor_model_parallel_rank = get_tensor_model_parallel_rank()
         self.pipeline_model_parallel_rank = get_pipeline_model_parallel_rank()
+        self.data_parallel_rank = get_data_parallel_rank()
 
         self.is_tensor_parallel_rank_zero = self.tensor_model_parallel_rank == 0
         self.is_first_pipeline_stage = self.pipeline_model_parallel_rank == 0
@@ -173,7 +175,11 @@ class BaseWorker:
 
     @synchronized
     def get_model_parallel_ranks(self) -> Tuple[int, int]:
-        return self.tensor_model_parallel_rank, self.pipeline_model_parallel_rank
+        return (
+            self.tensor_model_parallel_rank,
+            self.pipeline_model_parallel_rank,
+            self.data_parallel_rank,
+        )
 
     @torch.inference_mode()
     def execute_model(
@@ -389,5 +395,7 @@ def _init_distributed_environment(
     # A small all_reduce for warmup.
     torch.distributed.all_reduce(torch.zeros(1).cuda())
     initialize_model_parallel(
-        parallel_config.tensor_parallel_size, parallel_config.pipeline_parallel_size
+        tensor_model_parallel_size=parallel_config.tensor_parallel_size,
+        pipeline_model_parallel_size=parallel_config.pipeline_parallel_size,
+        data_parallel_size=parallel_config.data_parallel_size,
     )
