@@ -16,7 +16,6 @@ from sarathi.config import (
     ParallelConfig,
     SystemConfig,
 )
-from sarathi.core.block_space_manager import BlockDevice
 from sarathi.core.datatypes.comm_info import CommInfo
 from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
 from sarathi.core.datatypes.sequence import SamplerOutputs
@@ -203,47 +202,22 @@ class BaseWorker:
             swap_out_mappings = self.seq_manager.get_swap_out_mappings(
                 scheduler_outputs.swap_out_seq_ids
             )
-            now = time.perf_counter()
             for i, (seq_id, mapping) in enumerate(swap_out_mappings.items()):
                 assert (
                     not scheduler_outputs.swap_out_lens
                     or len(mapping) == scheduler_outputs.swap_out_lens[i]
                 )
-                self.metrics_store.on_swap_out_start(
-                    seq_id, len(mapping), start_timestamp=now
-                )
             get_attention_wrapper().cache_engine.swap_out(swap_out_mappings)
-        else:
-            # ???????????????????????????????
-            now = time.perf_counter()
-            for i, seq_id in enumerate(scheduler_outputs.swap_out_seq_ids):
-                if scheduler_outputs.swap_out_lens:
-                    num_blocks = scheduler_outputs.swap_out_lens[i]
-                else:
-                    num_blocks = (
-                        self.seq_manager.block_manager.get_seq_num_blocks_allocated(
-                            seq_id, BlockDevice.GPU
-                        )
-                    )
-                self.metrics_store.on_swap_out_start(
-                    seq_id, num_blocks, start_timestamp=now
-                )
 
         # Perform async swap in after sync swap out
         swap_in_mappings = self.seq_manager.get_swap_in_mappings(
             scheduler_outputs.swap_in_seq_ids
         )
-        now = time.perf_counter()
-        for seq_id in swap_in_mappings.keys():
-            self.metrics_store.on_swap_in_start(seq_id, start_timestamp=now)
 
         if self.config.cache_config.async_swap_in:
             get_attention_wrapper().cache_engine.begin_swap_in(swap_in_mappings)
         else:
             get_attention_wrapper().cache_engine.swap_in(swap_in_mappings)
-            now = time.perf_counter()
-            for seq_id in swap_in_mappings.keys():
-                self.metrics_store.on_swap_in_end(seq_id, end_timestamp=now)
 
         if seq_exec_metadata_list:
             assert not scheduler_outputs.is_empty()  # Superset
@@ -280,10 +254,6 @@ class BaseWorker:
         self.metrics_store.on_batch_end(
             batch_id=self.curr_batch_id, finished_seq_ids=finished_seq_ids
         )
-        if self.config.cache_config.async_swap_in:
-            now = time.perf_counter()
-            for seq_id in swap_in_mappings.keys():
-                self.metrics_store.on_swap_in_end(seq_id, end_timestamp=now)
 
         self.curr_batch_id += 1
 
