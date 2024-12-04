@@ -184,21 +184,21 @@ class WorkerMetricsStore:
 
     def process_metrics(self) -> Dict[str, Any]:
         all_processed_seq_metrics = {
-            seq_id: asdict(
-                ProcessedSeqMetrics.create(
-                    self.sequence_metrics[seq_id], self.batch_metrics
-                )
+            seq_id: ProcessedSeqMetrics.create(
+                self.sequence_metrics[seq_id], self.batch_metrics
             )
             for seq_id in self.sequence_metrics
         }
-        global_metrics = asdict(
-            GlobalMetrics.create(
-                all_processed_seq_metrics,
-                self.batch_metrics,
-                self.engine_scheduler_latencies,
-            )
+        global_metrics = GlobalMetrics.create(
+            all_processed_seq_metrics,
+            self.batch_metrics,
+            self.engine_scheduler_latencies,
         )
+
         return {
-            "global_metrics": global_metrics,
-            "seq_metrics": all_processed_seq_metrics,
+            "global_metrics": asdict(global_metrics),
+            "seq_metrics": {
+                seq_id: asdict(seq_metrics)
+                for seq_id, seq_metrics in all_processed_seq_metrics.items()
+            },
         }
