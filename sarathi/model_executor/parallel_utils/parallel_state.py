@@ -21,11 +21,14 @@ _PIPELINE_GLOBAL_RANKS = None
 # rank when broadcasting weights from src to all other data parallel ranks
 _DATA_PARALLEL_GLOBAL_RANKS = None
 
+_DISAGGREGATED = None
 
-def initialize_model_parallel(
-    tensor_model_parallel_size: int = 1,
-    pipeline_model_parallel_size: int = 1,
-    data_parallel_size: int = 1,
+
+def initialize_model_parallel_state(
+    tensor_model_parallel_size: int,
+    pipeline_model_parallel_size: int,
+    data_parallel_size: int,
+    disaggregate: bool,
 ) -> None:
     """
     Initialize model data parallel groups.
@@ -65,6 +68,9 @@ def initialize_model_parallel(
     assert data_parallel_size == world_size // (
         tensor_model_parallel_size * pipeline_model_parallel_size
     )
+
+    assert not disaggregate or data_parallel_size > 1
+    _DISAGGREGATED = disaggregate
 
     num_tensor_model_parallel_groups: int = world_size // tensor_model_parallel_size
     num_pipeline_model_parallel_groups: int = world_size // pipeline_model_parallel_size
@@ -228,3 +234,22 @@ def get_data_parallel_world_size():
 def get_data_parallel_rank():
     """Return my rank for the data parallel group."""
     return torch.distributed.get_rank(group=get_data_parallel_group())
+
+
+def is_disaggregated():
+    """Return True if we disaggregate prefills and decodes."""
+    assert _DISAGGREGATED is not None
+    return _DISAGGREGATED
+
+
+def is_prefill_only_rank():
+    """Return True if we are the rank that only pre-fills the cache."""
+    # TODO: we assume only data parallel rank 0 prefills, but we should support more
+    assert _DISAGGREGATED
+    return get_data_parallel_rank() == 0
+
+
+def is_decode_only_rank():
+    """Return True if we are the rank that only decodes."""
+    assert _DISAGGREGATED
+    return get_data_parallel_rank() > 0

@@ -29,10 +29,10 @@ from sarathi.model_executor.attention import (
 )
 from sarathi.model_executor.model_runner import ModelRunner
 from sarathi.model_executor.parallel_utils.parallel_state import (
+    get_data_parallel_rank,
     get_pipeline_model_parallel_rank,
     get_tensor_model_parallel_rank,
-    get_data_parallel_rank,
-    initialize_model_parallel,
+    initialize_model_parallel_state,
 )
 from sarathi.model_executor.utils import set_random_seed
 from sarathi.utils.threading_utils import exit_on_error, synchronized
@@ -394,8 +394,9 @@ def _init_distributed_environment(
 
     # A small all_reduce for warmup.
     torch.distributed.all_reduce(torch.zeros(1).cuda())
-    initialize_model_parallel(
+    initialize_model_parallel_state(
         tensor_model_parallel_size=parallel_config.tensor_parallel_size,
         pipeline_model_parallel_size=parallel_config.pipeline_parallel_size,
         data_parallel_size=parallel_config.data_parallel_size,
+        disaggregate=parallel_config.disaggregate,
     )

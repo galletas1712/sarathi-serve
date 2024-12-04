@@ -119,7 +119,11 @@ class BaseLLMEngine:
         self.output_socket.bind(f"tcp://*:{self.comm_info.output_socket_port}")
 
     def _validate_parallel_config(self) -> None:
-        assert self.config.parallel_config.pipeline_parallel_size == 1
+        # For now, don't support PP and TP
+        assert (
+            self.config.parallel_config.pipeline_parallel_size == 1
+            and self.config.parallel_config.tensor_parallel_size == 1
+        )
 
     def _get_worker_impl(self):
         # Lazy import the Worker to avoid importing torch.cuda/xformers
@@ -199,6 +203,13 @@ class BaseLLMEngine:
             self.config.parallel_config
         )
 
+        # NOTE: Since we emulate KV cache transfer using swaps, there's a callback in the attention wrapper that notifies the
+        # decode GPU that the duplication is done. Therefore, if disaggregation is enabled, then duplicates must also be enabled.
+        assert (
+            not self.config.parallel_config.disaggregate
+            or self.config.cache_config.duplicate_kv_cache
+        )
+
     def _init_cache(self) -> None:
         """Profiles the memory usage and initializes the KV cache."""
 
@@ -230,6 +241,8 @@ class BaseLLMEngine:
                 "Try increasing `gpu_memory_utilization` when "
                 "initializing the engine."
             )
+
+        # TODO: remove this if not benchmarking
         # max_blocks_per_request = math.ceil(
         #     self.config.model_config.max_model_len / self.config.cache_config.block_size
         # )
@@ -524,6 +537,18 @@ class BaseLLMEngine:
     def terminate(self) -> None:
         self._unbind_zmq_sockets()
         ray.shutdown()
+
+    def get_metric_store(self) -> MetricsStore:
+        return self.metrics_store
+
+    def get_metric_store(self) -> MetricsStore:
+        return self.metrics_store
+
+    def get_metric_store(self) -> MetricsStore:
+        return self.metrics_store
+
+    def get_metric_store(self) -> MetricsStore:
+        return self.metrics_store
 
     def get_metric_store(self) -> MetricsStore:
         return self.metrics_store
