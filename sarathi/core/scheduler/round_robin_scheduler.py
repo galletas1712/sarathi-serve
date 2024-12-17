@@ -1,10 +1,11 @@
+from collections import deque
 from typing import List
 
 from sarathi.config import (
     CacheConfig,
-    MLFQDisaggEmulationSchedulerConfig,
     ModelConfig,
     ParallelConfig,
+    RoundRobinDisaggEmulationSchedulerConfig,
 )
 from sarathi.core.block_space_manager import BlockDevice
 from sarathi.core.datatypes.sequence import Sequence, SequenceScheduleMetadata
@@ -16,23 +17,18 @@ from sarathi.logger import init_logger
 logger = init_logger(__name__)
 
 
-class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
+class RoundRobinDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
     def __init__(
         self,
         model_config: ModelConfig,
-        scheduler_config: MLFQDisaggEmulationSchedulerConfig,
+        scheduler_config: RoundRobinDisaggEmulationSchedulerConfig,
         cache_config: CacheConfig,
         parallel_config: ParallelConfig,
     ) -> None:
         super().__init__(model_config, scheduler_config, cache_config, parallel_config)
-        self.quantums = scheduler_config.get_quantums()
-
-        self.decode_queues: List[List[Sequence]] = [
-            [] for _ in range(len(self.quantums))
-        ]
-        self.request_quantum_map = {}
-        self.priorities = {}
-        self.last_iteration_ran = {}
+        self.max_blocks_to_replace = scheduler_config.max_blocks_to_replace
+        self.running_queue = []
+        self.swapped_out_queue = []
 
     def _get_seq_next_num_prefill_tokens(
         self, seq: Sequence, num_batched_tokens: int
@@ -44,6 +40,15 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         )
 
         return next_num_tokens
+
+    def _update_running_queue_with_freshly_finished_prefills(
+        self, running_decodes: List[Sequence]
+    ):
+        # Update the running queue with requests that finished prefill but haven't started decoding yet
+        # Since these are contained in running_decodes
+        for seq in running_decodes:
+            if seq not in self.running_queue:  # TODO: DANGER check if this works
+                self.running_queue.append(seq)
 
     def _schedule_prefills(
         self,
@@ -58,6 +63,8 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         scheduled_seq_id_metadata_list = []
 
         num_batched_tokens = 0
+
+        self._update_running_queue_with_freshly_finished_prefills(running_decodes)
 
         # Schedule currently running request
         for seq in running_prefills:
@@ -84,9 +91,6 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 )
             )
             running.append(seq)
-
-        queue = self._update_and_get_queue(running_decodes)
-        queue = list(filter(lambda seq: seq.is_paused(), queue))
 
         # Schedule new prefills
         while self.waiting:
@@ -121,33 +125,30 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             while num_required_blocks > self.block_manager.get_num_free_blocks(
                 BlockDevice.GPU
             ):
-                if not queue:
+                if not self.running_queue:
                     break
-                decode_seq = queue[-1]
+                decode_seq = self.running_queue[0]
                 num_blocks_allocated = self.block_manager.get_seq_num_blocks_allocated(
                     decode_seq.seq_id, BlockDevice.GPU
                 )
                 total_cpu_blocks_required += num_blocks_allocated
-                if (
-                    not self.cache_config.duplicate_kv_cache  # NOTE: under KV cache duplication, we guarantee we can swap out anything
-                    and total_cpu_blocks_required
-                    > self.block_manager.get_num_free_blocks(BlockDevice.CPU)
-                ):
+                if total_cpu_blocks_required > self.max_blocks_to_replace:
                     break
                 num_required_blocks -= num_blocks_allocated
                 running_decodes_to_swap_out.append(decode_seq)
-                queue.pop()
+                self.running_queue.pop(0)
 
             if num_required_blocks > self.block_manager.get_num_free_blocks(
                 BlockDevice.GPU
             ):
                 # Restore state
-                queue.extend(reversed(running_decodes_to_swap_out))
+                self.running_queue = running_decodes_to_swap_out + self.running_queue
                 break
 
-            for seq in running_decodes_to_swap_out:
-                self._swap_out(seq)
-            swap_out_seq_ids.extend(seq.seq_id for seq in running_decodes_to_swap_out)
+            for victim_seq in running_decodes_to_swap_out:
+                self._swap_out(victim_seq)
+                self.swapped_out_queue.append(victim_seq)
+                swap_out_seq_ids.append(victim_seq.seq_id)
 
             seq = self.waiting.pop(0)
             self._allocate(seq)
@@ -159,7 +160,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             )
             running.append(seq)
 
-        running.extend(queue)
+        running.extend(self.running_queue)
 
         return (
             running,
@@ -171,76 +172,16 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             scheduled_seq_id_metadata_list,
         )
 
-    def _get_quantum(self, num_running_iterations: int):
-        quantum_idx = 0
-        for i in range(len(self.quantums)):
-            if num_running_iterations > self.quantums[i]:
-                quantum_idx = i
-
-        quantum_idx = min(quantum_idx, len(self.quantums) - 1)
-
-        return quantum_idx
-
-    def _update_priorities(self, running: List[Sequence]):
-        # NOTE: We use increments because we want to reset priorities
-        for seq in running:
-            self.priorities[seq.seq_id] += 1
-
-        for quantum_idx in range(len(self.quantums)):
-            for seq in self.decode_queues[quantum_idx]:
-                if (
-                    seq.seq_id in self.last_iteration_ran
-                    and self.scheduler_config.starvation_limit is not None
-                    and self._iteration_id - self.last_iteration_ran[seq.seq_id]
-                    > self.scheduler_config.starvation_limit
-                ):
-                    self.priorities[seq.seq_id] = 0
-
-    def _update_quantums(self):
-        for quantum_idx in reversed(range(len(self.quantums))):
-            indices_to_remove = []
-            for i in range(len(self.decode_queues[quantum_idx])):
-                seq = self.decode_queues[quantum_idx][i]
-                next_quantum = self._get_quantum(self.priorities[seq.seq_id])
-                if next_quantum != quantum_idx:
-                    # print(f"Moving {seq.seq_id} from quantum {quantum_idx} to {next_quantum} since run count is {seq.get_output_len()}")
-                    self.decode_queues[next_quantum].append(seq)
-                    self.request_quantum_map[seq.seq_id] = next_quantum
-                    indices_to_remove.append(i)
-            for i in reversed(indices_to_remove):
-                self.decode_queues[quantum_idx].pop(i)
-
     def _free_seq(self, seq: Sequence) -> None:
         super()._free_seq(seq)
 
-        if seq.seq_id in self.request_quantum_map:
-            self.decode_queues[self.request_quantum_map[seq.seq_id]].remove(seq)
-            del self.request_quantum_map[seq.seq_id]
-            del self.priorities[seq.seq_id]
-            del self.last_iteration_ran[seq.seq_id]
+        # Remove seq out of running queue
+        self.running_queue = list(
+            filter(lambda s: s.seq_id != seq.seq_id, self.running_queue)
+        )
 
-    def _update_and_get_queue(self, running_decodes: List[Sequence]):
-        self._update_quantums()
-
-        # At this point, running_decodes could include some previously finished prefills
-        # It can also include recently swapped in requests
-        # It's also in FCFS order
-        for seq in running_decodes:
-            if seq.seq_id not in self.request_quantum_map:
-                quantum_idx = self._get_quantum(0)  # Always 0 quantum
-                self.decode_queues[quantum_idx].append(seq)
-                self.request_quantum_map[seq.seq_id] = quantum_idx
-                self.priorities[seq.seq_id] = 0
-
-        # Here, we're sorting all of our requests in order of quantum
-        queue: List[Sequence] = []
-        for seqs in self.decode_queues:
-            queue.extend(seqs)
-
-        for seq in queue:
-            assert seq.is_prompt_processing_finished()
-
-        return queue
+        for i, s in enumerate(self.swapped_out_queue):
+            assert s.seq_id != seq.seq_id
 
     def _schedule_decodes(self, running_decodes: List[Sequence], now: float):
         running = []
@@ -251,15 +192,14 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         num_batched_tokens = 0
         seqs_to_finish_swapping_in = []
 
-        queue = self._update_and_get_queue(running_decodes)
+        self._update_running_queue_with_freshly_finished_prefills(running_decodes)
 
-        i = 0
-        while i < len(queue):
-            seq = queue[i]
-            assert (
-                seq.is_paused() or seq.is_swapped_out()
-            ), f"Sequence {seq.seq_id} is in an invalid state: {seq.get_status()}"
-
+        new_swap_outs = []
+        new_running_queue_seqs = []
+        while self.swapped_out_queue:
+            seq = self.swapped_out_queue[0]
+            logger.info(f"Trying to schedule swapped out sequence {seq.seq_id}")
+            assert seq.is_swapped_out()
             # Swap lowest priority requests in running list
             num_required_blocks = (
                 seq.get_num_logical_blocks()
@@ -269,19 +209,21 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             )
             total_cpu_blocks_required = 0
             running_decodes_to_swap_out = []
-            j = len(queue) - 1
+            j = 0
             while num_required_blocks > self.block_manager.get_num_free_blocks(
                 BlockDevice.GPU
             ):
-                assert j >= i
-                if j == i:
+                if j == len(self.running_queue):
                     break
-                decode_seq = queue[j]
+                decode_seq = self.running_queue[j]
                 num_blocks_allocated = self.block_manager.get_seq_num_blocks_allocated(
                     decode_seq.seq_id, BlockDevice.GPU
                 )
                 if not num_blocks_allocated:
-                    j -= 1
+                    j += 1
+                    logger.info(
+                        f"Target victim seq not allocated on GPU: {decode_seq.seq_id}"
+                    )
                     continue
 
                 blocks_to_swap = (
@@ -295,19 +237,31 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                         total_cpu_blocks_required
                         > self.block_manager.get_num_free_blocks(BlockDevice.CPU)
                     ):
+                        logger.info(
+                            f"Target victim seq {decode_seq.seq_id} swap out requirements exceeds CPU blocks"
+                        )
                         break
+
+                if total_cpu_blocks_required > self.max_blocks_to_replace:
+                    logger.info(
+                        f"Target victim seq {decode_seq.seq_id} swap out requirements exceeds max blocks to replace"
+                    )
+                    break
+
                 num_required_blocks -= blocks_to_swap
                 running_decodes_to_swap_out.append((decode_seq, blocks_to_swap))
-                j -= 1
+                j += 1
 
             if num_required_blocks <= self.block_manager.get_num_free_blocks(
                 BlockDevice.GPU
             ):
-                queue = queue[: j + 1]
+                self.running_queue = self.running_queue[j:]
+                self.swapped_out_queue.pop(0)
             else:
-                # NOTE: We allow skipping to the next sequence if we can't fit the current one
-                i += 1
-                continue
+                logger.info(
+                    f"Couldn't schedule swapped out sequence {seq.seq_id}, giving up on scheduling swapped out sequences"
+                )
+                break  # NOTE: unlike MLFQ we don't skip to the next swapped out request to attempt swap in if we can't swap in this one
 
             # Swap the sequences we promised to swap out
             for seq_to_swap, num_blocks_to_swap in running_decodes_to_swap_out:
@@ -320,6 +274,7 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 else:
                     self._swap_out(seq_to_swap)
                 swap_out_seq_ids.append(seq_to_swap.seq_id)
+                new_swap_outs.append(seq_to_swap)
 
             assert (
                 seq.is_paused() or seq.is_swapped_out()
@@ -341,19 +296,60 @@ class MLFQDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             # Append new slots to the sequence group.
             self._append_slot(seq)
             running.append(seq)
+            new_running_queue_seqs.append(seq)
             num_batched_tokens += 1
             scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(seq)
             )
-            self.last_iteration_ran[seq.seq_id] = self._iteration_id
 
-            i += 1
+        # NOW WE SCHEDULE FROM THE RUNNING LIST
+        # At this point running_queue should only have deocdes that we know for sure we don't need to swap in
+        existing_running_seqs = []
+        while self.running_queue:
+            seq = self.running_queue.pop(-1)
+            logger.info(f"Trying to schedule running sequence {seq.seq_id}")
+            assert seq.is_paused()
 
-        self._update_priorities(running)
+            while not self.block_manager.can_append_slot(seq):
+                if self.running_queue:
+                    victim_seq = self.running_queue.pop(0)
+                    should_break = False
+                    logger.info(f"Evicting other running sequence {victim_seq.seq_id}")
+                else:
+                    victim_seq = seq
+                    should_break = True
+                    logger.info("Evicting self and giving up on running sequences")
+                    # TODO: support partial swap outs here
+                self._swap_out(victim_seq)
+                swap_out_seq_ids.append(victim_seq.seq_id)
+                new_swap_outs.append(victim_seq)
+                if should_break:
+                    break
+            else:
+                self._append_slot(seq)
+                running.append(seq)
+                num_batched_tokens += 1
+                scheduled_seq_id_metadata_list.append(
+                    SequenceScheduleMetadata.from_sequence(seq)
+                )
+                existing_running_seqs.append(seq)
+
+        self.running_queue = (
+            list(reversed(existing_running_seqs)) + new_running_queue_seqs
+        )  #### !!!!!!
+        self.swapped_out_queue.extend(new_swap_outs)
 
         assert not seqs_to_finish_swapping_in or self.cache_config.async_swap_in
         for seq in seqs_to_finish_swapping_in:
             self._finish_swap_in(seq)
+
+        logger.info(f"Running queue: {[seq.seq_id for seq in self.running_queue]}")
+        logger.info(
+            f"Swapped out queue: {[seq.seq_id for seq in self.swapped_out_queue]}"
+        )
+        logger.info(
+            f"Scheduler outputs:\nrunning {[seq.seq_id for seq in running]}\nswap_out_seqs_ids {swap_out_seq_ids}\nswap_out_lens {swap_out_lens}\nswap_in_seq_ids {swap_in_seq_ids}\nscheduled_seq_ids {[seq_m.seq_id for seq_m in scheduled_seq_id_metadata_list]}"
+        )
 
         return (
             running,

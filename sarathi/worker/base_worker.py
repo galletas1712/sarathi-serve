@@ -207,17 +207,14 @@ class BaseWorker:
                     not scheduler_outputs.swap_out_lens
                     or len(mapping) == scheduler_outputs.swap_out_lens[i]
                 )
-            get_attention_wrapper().cache_engine.swap_out(swap_out_mappings)
+            get_attention_wrapper().cache_engine.swap_out(
+                swap_out_mappings
+            )  # TODO: move this to model_runner
 
         # Perform async swap in after sync swap out
         swap_in_mappings = self.seq_manager.get_swap_in_mappings(
             scheduler_outputs.swap_in_seq_ids
         )
-
-        if self.config.cache_config.async_swap_in:
-            get_attention_wrapper().cache_engine.begin_swap_in(swap_in_mappings)
-        else:
-            get_attention_wrapper().cache_engine.swap_in(swap_in_mappings)
 
         if seq_exec_metadata_list:
             assert not scheduler_outputs.is_empty()  # Superset
@@ -239,6 +236,7 @@ class BaseWorker:
                     if self.config.cache_config.duplicate_kv_cache
                     else None
                 ),
+                swap_in_mappings=swap_in_mappings,
             )
             # print(f"Iteration: {self.curr_batch_id}, model executed!")
         else:

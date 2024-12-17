@@ -93,10 +93,6 @@ class CacheEngine:
         assert self.finish_swap_in_events[layer].query()
         del self.finish_swap_in_events[layer]
 
-        # TODO: remove later
-        for prev_layer in range(layer):
-            assert self.finish_swap_in_events[prev_layer].query()
-
         if layer == self.num_layers - 1:
             self.finish_swap_in_events.clear()
 

@@ -218,6 +218,7 @@ class ModelRunner:
         self,
         seq_exec_metadata_list: List[SequenceExecutionMetadata],
         duplicate_mapping: Optional[List[Tuple[int, int]]] = None,
+        swap_in_mappings: Optional[dict[str, list[Tuple[int, int]]]] = None,
     ) -> torch.Tensor:
         # Prepare input tensors.
         with self._prepare_inputs_e2e_timer:
@@ -227,6 +228,11 @@ class ModelRunner:
             assert duplicate_mapping is not None
 
         get_attention_wrapper().begin_forward(seq_exec_metadata_list, duplicate_mapping)
+
+        if self.config.cache_config.async_swap_in:
+            get_attention_wrapper().cache_engine.begin_swap_in(swap_in_mappings)
+        else:
+            get_attention_wrapper().cache_engine.swap_in(swap_in_mappings)
 
         with self._model_execution_e2e_timer:
             # Execute the model.

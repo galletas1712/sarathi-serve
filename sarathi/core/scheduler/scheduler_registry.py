@@ -5,6 +5,9 @@ from sarathi.core.scheduler.fcfs_disagg_emulation_scheduler import (
 from sarathi.core.scheduler.mlfq_disagg_emulation_scheduler import (
     MLFQDisaggEmulationScheduler,
 )
+from sarathi.core.scheduler.round_robin_scheduler import (
+    RoundRobinDisaggEmulationScheduler,
+)
 from sarathi.core.scheduler.sarathi_scheduler import SarathiScheduler
 from sarathi.utils.base_registry import BaseRegistry
 
@@ -21,4 +24,7 @@ SchedulerRegistry.register(
 )
 SchedulerRegistry.register(
     SchedulerType.MLFQ_DISAGG_EMULATION, MLFQDisaggEmulationScheduler
+)
+SchedulerRegistry.register(
+    SchedulerType.ROUND_ROBIN_DISAGG_EMULATION, RoundRobinDisaggEmulationScheduler
 )

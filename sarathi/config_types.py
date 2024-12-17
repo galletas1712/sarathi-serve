@@ -1,6 +1,5 @@
-from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 GPULocation = Tuple[Optional[str], int]  # (node_ip, gpu_id)
 ResourceMapping = List[GPULocation]
@@ -12,6 +11,7 @@ class SchedulerType(Enum):
     DISAGG_EMULATION = "DISAGG_EMULATION"
     FCFS_DISAGG_EMULATION = "FCFS_DISAGG_EMULATION"
     MLFQ_DISAGG_EMULATION = "MLFQ_DISAGG_EMULATION"
+    ROUND_ROBIN_DISAGG_EMULATION = "ROUND_ROBIN_DISAGG_EMULATION"
 
 
 class RequestGeneratorType(Enum):

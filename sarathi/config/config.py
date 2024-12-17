@@ -160,19 +160,19 @@ class CacheConfig:
         },
     )
     num_cpu_blocks: Optional[int] = field(
-        default=8192,  # TODO: change back to 24088, or actually match the GPU
+        default=40000,  # TODO: change back to 24088, or actually match the GPU
         metadata={"help": "Number of CPU blocks for caching."},
     )
     async_swap_in: bool = field(
-        default=False,
+        default=True,
         metadata={"help": "Whether to asynchronously swap in sequences."},
     )
     partial_swap_out: bool = field(
-        default=False,
+        default=True,
         metadata={"help": "Whether to partially swap out prefixes of sequences."},
     )
     duplicate_kv_cache: bool = field(
-        default=True,
+        default=False,
         metadata={
             "help": "Duplicate KV cache in host memory of all running requests. Requires num_cpu_blocks > num_gpu_blocks."
         },
@@ -292,6 +292,15 @@ class MLFQDisaggEmulationSchedulerConfig(DisaggEmulationSchedulerConfig):
             self.starvation_limit // 2,
             self.starvation_limit,
         ]
+
+
+@dataclass
+class RoundRobinDisaggEmulationSchedulerConfig(DisaggEmulationSchedulerConfig):
+    max_blocks_to_replace: int = 128  # TODO: lower this parameter? adjust?
+
+    @staticmethod
+    def get_type():
+        return SchedulerType.ROUND_ROBIN_DISAGG_EMULATION
 
 
 @dataclass
