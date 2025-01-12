@@ -71,7 +71,11 @@ class CacheEngine:
         return kv_cache
 
     def begin_swap_in(self, swap_mapping: dict[str, list[tuple[int, int]]]) -> None:
-        # Create events for each layer and sync them one by one, but batching the sync of all seqs at a time for each layer
+        """
+        Asynchronously swap-in blocks from host to GPU memory.
+        This is a subroutine for synchronous swap-ins, but is called individually for async swap-in
+        Create events for each layer and sync them one by one, but batching the sync of all seqs at a time for each layer.
+        """
         with torch.cuda.stream(self.swap_in_stream):
             for layer_id in range(self.num_layers):
                 for _, src_to_dst in swap_mapping.items():
@@ -86,6 +90,11 @@ class CacheEngine:
                 self.finish_swap_in_events[layer_id] = layer_finish_event
 
     def wait_for_swap_in(self, layer: Optional[int] = None) -> None:
+        """
+        Waits for async swap-in to complete.
+        For synchronous swap-ins, this is called right after begin_swap_in.
+        For async swap-ins, this is called before the forward pass of each layer.
+        """
         assert layer is None or (layer >= 0 and layer < self.num_layers)
         if layer is None:
             layer = self.num_layers - 1
@@ -97,13 +106,18 @@ class CacheEngine:
             self.finish_swap_in_events.clear()
 
     def swap_in(self, swap_mapping: dict[str, list[tuple[int, int]]]) -> None:
+        """
+        Synchronously swap-in blocks from host to GPU memory.
+        """
+        assert not self.async_swap_in
         self.begin_swap_in(swap_mapping=swap_mapping)
         self.wait_for_swap_in()
         assert not self.finish_swap_in_events
 
-    ########## Vanilla swap out
+    ########## Synchronous swap out
 
     def swap_out(self, swap_mapping: Dict[str, List[Tuple[int, int]]]) -> None:
+        """Synchronously swaps out pages from GPU to host memory. *NOT* duplication, and flag cannot be enabled."""
         assert not self.duplicate_kv_cache
         finish_event = torch.cuda.Event()
         for _, src_to_dst in swap_mapping.items():
@@ -118,6 +132,7 @@ class CacheEngine:
     def register_duplicate_mapping_optional(
         self, duplicate_mapping: Optional[list[tuple[int, int]]]
     ) -> None:
+        """Registers a global mapping of pages to be duplicated between GPU and host memory."""
         if self.duplicate_kv_cache:
             assert duplicate_mapping is not None
             assert not hasattr(self, "duplicate_mapping")
@@ -128,12 +143,14 @@ class CacheEngine:
             assert duplicate_mapping is None
 
     def sync_and_remove_duplicate_mapping_optional(self) -> None:
+        """Waits until KV cache duplication is complete and removes global page mapping."""
         if self.duplicate_kv_cache:
             assert hasattr(self, "duplicate_mapping")
             self.duplicate_stream.synchronize()
             del self.duplicate_mapping
 
     def swap_out_duplicate_kv_cache(self, layer_id: int) -> None:
+        """Asynchronously duplicates KV cache in host memory. No-op if turned off in config."""
         if self.duplicate_kv_cache:
             assert layer_id is not None
             assert (

@@ -200,3 +200,4 @@ high_tail_latency_output
 profiling_outputs
 env_2
 embedding_output/
+**/ShareGPT_V3_converted.json

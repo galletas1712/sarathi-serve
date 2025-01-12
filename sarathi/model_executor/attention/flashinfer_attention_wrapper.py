@@ -7,10 +7,13 @@ from sarathi.config import ModelConfig, ParallelConfig
 from sarathi.core.datatypes.sequence import SequenceExecutionMetadata
 from sarathi.metrics.constants import OperationMetrics
 from sarathi.model_executor.attention.base_attention_wrapper import BaseAttentionWrapper
-from sarathi_kernels.cache_ops import swap_blocks
 
 
 class FlashinferAttentionWrapper(BaseAttentionWrapper):
+    """
+    Wraps all attention operations in flashinfer and handles waiting on async swap-ins, performing the duplicate KV swap-out and waiting on async swap-out.
+    """
+
     _inst = None
 
     def init(
