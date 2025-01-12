@@ -1,7 +1,7 @@
 import argparse
 import datetime
 import json
-from typing import List
+from typing import List, Dict, Any
 
 from tqdm import tqdm
 
@@ -28,7 +28,7 @@ llm_engine = LLMEngine.from_system_config(system_config)
 
 def generate(
     llm_engine: LLMEngine,
-    prompts: List[str],
+    prompts: List[List[Dict[str, Any]]],
     sampling_params: SamplingParams,
     enable_profiling: bool = False,
 ) -> List[RequestOutput]:
@@ -60,6 +60,17 @@ def generate(
     llm_engine.pull_worker_metrics()
 
 
+def process_conversations(conversations: Dict[str, List[Dict[str, Any]]]) -> List[List[Dict[str, Any]]]:
+    processed_prompts = []
+    for conversation in conversations.values():
+        current_prompt = []
+        for message in conversation:
+            current_prompt.append(message)
+            if message["role"] == "user":
+                processed_prompts.append(current_prompt.copy())
+    return processed_prompts
+
+
 if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Run ShareGPT trace")
@@ -74,5 +85,5 @@ if __name__ == "__main__":
     with open(args.path_to_trace, "r") as file:
         trace_data = json.load(file)
 
-    # Convert lists to strings and collect them into a list
-    prompts = [" ".join(prompt_list) for prompt_list in trace_data.values()]
+    # Process the conversation data into prompts
+    prompts = process_conversations(trace_data)
