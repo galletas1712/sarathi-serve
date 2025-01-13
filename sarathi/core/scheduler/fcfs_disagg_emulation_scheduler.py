@@ -26,17 +26,6 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
     ) -> None:
         super().__init__(model_config, scheduler_config, cache_config, parallel_config)
 
-    def _get_seq_next_num_prefill_tokens(
-        self, seq: Sequence, num_batched_tokens: int
-    ) -> int:
-        assert not seq.is_finished()
-        next_num_tokens = min(
-            seq.get_prompt_len() - seq.get_num_prompt_tokens_processed(),
-            self.scheduler_config.chunk_size - num_batched_tokens,
-        )
-
-        return next_num_tokens
-
     def _schedule_prefills(
         self,
         running_prefills: List[Sequence],
@@ -61,14 +50,12 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
         ignored_seq_ids = []
         scheduled_seq_id_metadata_list = []
 
-        num_batched_tokens = 0
-
         # Schedule currently running request
         for seq in running_prefills:
             assert not seq.is_prompt_processing_finished()
 
-            next_num_prefill_tokens = self._get_seq_next_num_prefill_tokens(
-                seq, num_batched_tokens
+            next_num_prefill_tokens = (
+                seq.get_prompt_len() - seq.get_num_prompt_tokens_processed()
             )
 
             # as long as the request could fit in the batch previously
@@ -79,8 +66,6 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
             if next_num_prefill_tokens == 0:
                 running.append(seq)
                 continue
-
-            num_batched_tokens += next_num_prefill_tokens
 
             scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(
@@ -116,8 +101,8 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 break
 
             # check if we can fit the prefill in the batch
-            next_num_prefill_tokens = self._get_seq_next_num_prefill_tokens(
-                seq, num_batched_tokens
+            next_num_prefill_tokens = (
+                seq.get_prompt_len() - seq.get_num_prompt_tokens_processed()
             )
 
             if next_num_prefill_tokens == 0:
@@ -125,7 +110,6 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
 
             seq = self.waiting.pop(0)
             self._allocate(seq)
-            num_batched_tokens += next_num_prefill_tokens
             scheduled_seq_id_metadata_list.append(
                 SequenceScheduleMetadata.from_sequence(
                     seq, prompt_chunk_len=next_num_prefill_tokens
@@ -182,23 +166,23 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                     # Preempt the lowest-priority sequence groups.
                     victim_seq = queue.pop(-1)
                     if victim_seq.is_paused():
-                        print(
-                            f"Iteration {self._iteration_id}: Swapping out {victim_seq.seq_id} to make space for {seq.seq_id}"
-                        )
+                        # print(
+                        #     f"Iteration {self._iteration_id}: Swapping out {victim_seq.seq_id} to make space for {seq.seq_id}"
+                        # )
                         self._swap_out(victim_seq)
                         swap_out_seq_ids.append(victim_seq.seq_id)
                     else:
-                        print(
-                            f"Iteration {self._iteration_id}: Leaving {victim_seq.seq_id} swapped out to make space for {seq.seq_id}"
-                        )
+                        # print(
+                        #     f"Iteration {self._iteration_id}: Leaving {victim_seq.seq_id} swapped out to make space for {seq.seq_id}"
+                        # )
                         assert victim_seq.is_swapped_out()
                 else:
                     # No other sequence groups can be prempted.
                     # Preempt the current sequence group.
                     if seq.is_paused():
-                        print(
-                            f"Iteration {self._iteration_id}: Swapping out {seq.seq_id} because can't run :("
-                        )
+                        # print(
+                        #     f"Iteration {self._iteration_id}: Swapping out {seq.seq_id} because can't run :("
+                        # )
                         if self.cache_config.partial_swap_out:
                             num_blocks_to_swap = (
                                 self.block_manager.get_seq_num_blocks_allocated(
@@ -211,9 +195,9 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                             self._swap_out(seq)
                         swap_out_seq_ids.append(seq.seq_id)
                     else:
-                        print(
-                            f"Iteration {self._iteration_id}: Can't swap in {seq.seq_id} because no space :("
-                        )
+                        # print(
+                        #     f"Iteration {self._iteration_id}: Can't swap in {seq.seq_id} because no space :("
+                        # )
                         assert seq.is_swapped_out()
                     break
             else:
@@ -222,7 +206,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                 ), f"Sequence {seq.seq_id} is in an invalid state: {seq.get_status()}"
 
                 if seq.is_swapped_out():
-                    print(f"Iteration {self._iteration_id}: Swapping in {seq.seq_id}")
+                    # print(f"Iteration {self._iteration_id}: Swapping in {seq.seq_id}")
                     assert self.block_manager.can_swap_in_and_append_slot(
                         seq.seq_id, seq.get_num_logical_blocks()
                     )
@@ -233,7 +217,7 @@ class FCFSDisaggEmulationScheduler(DisaggEmulationBaseScheduler):
                         self._swap_in(seq)
                     swap_in_seq_ids.append(seq.seq_id)
 
-                print(f"Iteration {self._iteration_id}: Scheduling {seq.seq_id}")
+                # print(f"Iteration {self._iteration_id}: Scheduling {seq.seq_id}")
                 # Append new slots to the sequence group.
                 self._append_slot(seq)
                 running.append(seq)

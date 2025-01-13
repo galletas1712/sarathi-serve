@@ -160,7 +160,7 @@ class CacheConfig:
         },
     )
     num_cpu_blocks: Optional[int] = field(
-        default=40000,  # TODO: change back to 24088, or actually match the GPU
+        default=2048,  # TODO: change back to 24088, or actually match the GPU
         metadata={"help": "Number of CPU blocks for caching."},
     )
     async_swap_in: bool = field(

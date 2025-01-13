@@ -130,7 +130,7 @@ class SarathiScheduler(BaseScheduler):
                 running_prefills.append(seq)
                 continue
 
-            while not self.block_manager.can_append_slot():
+            while not self.block_manager.can_append_slot(seq):
                 if self.running:
                     # Preempt the lowest-priority sequence groups.
                     victim_seq = self.running.pop(-1)
@@ -235,6 +235,7 @@ class SarathiScheduler(BaseScheduler):
             ignored_seq_ids=ignored_seq_ids,
             preempted_seq_ids=preempted_seq_ids,
             swap_out_seq_ids=[],
+            swap_out_lens=[],
             swap_in_seq_ids=[],
             scheduled_seq_id_metadata_list=scheduled_seq_id_metadata_list,
         )

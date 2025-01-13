@@ -21,7 +21,7 @@ from sarathi.core.datatypes.scheduler_output import SchedulerOutputs
 from sarathi.core.datatypes.sequence import SamplerOutputs
 from sarathi.core.sequence_manager.worker_sequence_manager import WorkerSequenceManager
 from sarathi.logger import init_logger
-from sarathi.metrics.alt_metrics_store import WorkerMetricsStore
+from sarathi.metrics.nop_metrics_store import WorkerMetricsStore
 from sarathi.model_executor.attention import (
     get_attention_wrapper,
     set_attention_backend,
